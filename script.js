@@ -22,18 +22,17 @@ const auth = firebase.auth();
 console.log("Firebase Connected!", db);
 
 // ==========================================
-// SECTION 0.5: ASSET PRELOADER
+// SECTION 0.5: ASSET PRELOADER (FIXED)
 // ==========================================
 
 const ALL_ASSETS = [
     "cardbacks/cardback.png",
-    "animations/cardani/stallion.gif",
-    // Add any other UI images here if you have them
+    // Add any manual images here if needed
 ];
 
-// 1. Harvest all Card Images automatically
-BASE_DECK.forEach(card => ALL_ASSETS.push(card.img));
-SKILL_POOL.forEach(skill => ALL_ASSETS.push(skill.img));
+// Harvest images from data
+BASE_DECK.forEach(card => { if(card.img) ALL_ASSETS.push(card.img); });
+SKILL_POOL.forEach(skill => { if(skill.img) ALL_ASSETS.push(skill.img); });
 
 let assetsLoaded = 0;
 
@@ -42,6 +41,14 @@ function preloadGame() {
     const bar = document.getElementById('loading-bar');
     const txt = document.getElementById('loading-text');
 
+    // SAFETY NET: Force start after 4 seconds if stuck
+    setTimeout(() => {
+        if (assetsLoaded < totalAssets) {
+            console.log("Preloader timed out. Force starting.");
+            finishLoading();
+        }
+    }, 4000);
+
     if (totalAssets === 0) {
         finishLoading();
         return;
@@ -49,36 +56,45 @@ function preloadGame() {
 
     ALL_ASSETS.forEach(filename => {
         const img = new Image();
-        img.src = IMAGES + filename;
         
+        // 1. Define the listener FIRST
         img.onload = () => {
             assetsLoaded++;
-            const percent = Math.floor((assetsLoaded / totalAssets) * 100);
-            bar.style.width = percent + "%";
-            txt.innerText = `Loading Assets... ${percent}%`;
-
-            if (assetsLoaded === totalAssets) {
-                setTimeout(finishLoading, 500); // Small pause for effect
-            }
+            updateLoader(assetsLoaded, totalAssets, bar, txt);
         };
 
         img.onerror = () => {
-            console.error("Failed to load:", filename);
-            assetsLoaded++; // Count it anyway so game doesn't hang
-            if (assetsLoaded === totalAssets) finishLoading();
+            console.log("Failed to load: " + filename);
+            assetsLoaded++; // Count it anyway so we don't hang
+            updateLoader(assetsLoaded, totalAssets, bar, txt);
         };
+
+        // 2. Request the image SECOND
+        img.src = IMAGES + filename;
     });
+}
+
+function updateLoader(current, total, bar, txt) {
+    const percent = Math.floor((current / total) * 100);
+    if (bar) bar.style.width = percent + "%";
+    if (txt) txt.innerText = `Loading Assets... ${percent}%`;
+
+    if (current >= total) {
+        setTimeout(finishLoading, 500);
+    }
 }
 
 function finishLoading() {
     const screen = document.getElementById('loading-screen');
-    screen.style.opacity = '0';
-    setTimeout(() => {
-        screen.classList.add('hidden');
-    }, 1000); // Fade out transition
+    if (screen) {
+        screen.style.opacity = '0';
+        setTimeout(() => {
+            screen.classList.add('hidden');
+        }, 1000);
+    }
 }
 
-// START LOADING IMMEDIATELY
+// Start immediately
 window.onload = preloadGame;
 
 
