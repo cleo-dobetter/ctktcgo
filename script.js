@@ -24,13 +24,10 @@ const auth = firebase.auth();
 console.log("Firebase Connected!", db);
 
 
-
 // ==========================================
 // SECTION 1: GAME CONFIGURATION (STATIC DATA)
-// TROUBLESHOOTING: Check here if images aren't loading or card stats are wrong.
 // ==========================================
 
-// --- 1. BASE DECK (Always Included) ---
 const BASE_DECK = [
     { name: "Blazing Colt", type: "atk", val: 10, cost: 1, img: "horse/blazing_colt.png", count: 3 },
     { name: "Blazing Pegasus", type: "atk", val: 15, cost: 2, img: "horse/blazing_pegasus.png", count: 2 },
@@ -40,7 +37,6 @@ const BASE_DECK = [
     { name: "Devil King", type: "def", val: 20, cost: 2, img: "knights/devil_king.png", count: 1 }
 ];
 
-// --- 2. SKILL POOL (Shop Data) ---
 const SKILL_POOL = [
     { id: "miss", name: "Secret Agent 12", costPoints: 1, limit: 3, img: "agents/secret_agent_12.png", effect: "miss", desc: "Causes an attack to Miss completely (0 Dmg)." },
     { id: "reflect", name: "Queen's Mirror", costPoints: 1, limit: 3, img: "knights/queens_mirror.png", effect: "reflect", desc: "Reflects damage back to the attacker." },
@@ -51,15 +47,16 @@ const SKILL_POOL = [
 
 // ==========================================
 // SECTION 2: GLOBAL STATE (MEMORY)
-// TROUBLESHOOTING: If the game forgets your score or deck, this section is responsible.
 // ==========================================
 
+// --- Multiplayer State ---
 let gameMode = 'solo'; // 'solo' or 'multi'
-let myRole = null;     // 'host' or 'guest'
+let myRole = null;     // 'host' or 'guest' (Active role)
+let playerRole = null; // 'host' or 'guest' (Lobby choice)
 let currentRoomId = null;
 let roomRef = null;
 
-
+// --- Game State ---
 let playerSkills = {}; 
 let currentPoints = 0;
 const MAX_POINTS = 15;
@@ -69,19 +66,15 @@ let pHP = 60, aiHP = 60, turnCount = 1;
 let pHand = [], aiHand = [], pField = [null, null, null], aiField = [null, null, null];
 let actions = 0, discarded = false, selectedIdx = null, sacrifices = [];
 let isProcessing = false;
+let isTutorial = false;
 
-// NEW DETAILED STATS TRACKING
+// --- Stats Tracking ---
 let stats = {
-    atkDmgGiven: 0,
-    atkDmgTaken: 0,
-    skillDmgGiven: 0,
-    skillDmgTaken: 0,
-    defDmgGiven: 0,
-    defDmgTaken: 0,
-    skillsUsed: 0,
-    sacrifices: 0,
-    startTime: 0,
-    endTime: 0
+    atkDmgGiven: 0, atkDmgTaken: 0,
+    skillDmgGiven: 0, skillDmgTaken: 0,
+    defDmgGiven: 0, defDmgTaken: 0,
+    skillsUsed: 0, sacrifices: 0,
+    startTime: 0, endTime: 0
 };
 
 loadDefaultSkills(); 
@@ -91,36 +84,21 @@ function loadDefaultSkills() {
     calcPoints();
 }
 
-let isTutorial = false; // NEW FLAG
-
-
 // ==========================================
 // SECTION 3: MENU & UI NAVIGATION
-// TROUBLESHOOTING: If buttons don't work or menus won't close, copy this section.
 // ==========================================
 
 function startGame() {
-    isTutorial = false; // Ensure tutorial mode is OFF
-    
-    // UI Visibility
+    isTutorial = false;
     document.getElementById('start-screen').classList.add('hidden');
     document.getElementById('game-container').classList.remove('hidden');
     document.getElementById('top-bar').classList.remove('hidden');
-
-    // FORCE the menu button to appear for standard matches
     document.getElementById('btn-menu').style.display = 'block'; 
-
     init();
 }
 
-
-function openRules() {
-    document.getElementById('rules-menu').classList.remove('hidden');
-}
-function closeRulesMenu() {
-    document.getElementById('rules-menu').classList.add('hidden');
-}
-
+function openRules() { document.getElementById('rules-menu').classList.remove('hidden'); }
+function closeRulesMenu() { document.getElementById('rules-menu').classList.add('hidden'); }
 
 function quitToTitle() {
     document.getElementById('game-container').classList.add('hidden');
@@ -129,8 +107,6 @@ function quitToTitle() {
     document.getElementById('game-over-screen').classList.add('hidden');
     document.getElementById('start-screen').classList.remove('hidden');
 }
-
-document.getElementById('btn-menu').style.display = 'block'; 
 
 function openSkills() {
     document.getElementById('skills-overlay').classList.remove('hidden');
@@ -225,25 +201,28 @@ function updateBuilderUI() {
 
 // ==========================================
 // SECTION 4: GAME INITIALIZATION
-// TROUBLESHOOTING: If the game crashes immediately upon starting, check this.
 // ==========================================
 
 async function init() {
-    // 1. Setup My Deck (Standard Logic)
+    // 1. Setup My Deck
     pDeck = [];
     BASE_DECK.forEach(card => { for(let i=0; i<card.count; i++) pDeck.push({...card}); });
-    
-    // (Add Skills if you have them implemented)
-    // SKILL_POOL.forEach(...) 
+    // Add Skills
+    SKILL_POOL.forEach(skill => {
+        let qty = playerSkills[skill.id] || 0;
+        for(let i=0; i<qty; i++) {
+            pDeck.push({ name: skill.name, type: "skl", val: 0, cost: 0, img: skill.img, effect: skill.effect, count: 1 });
+        }
+    });
     
     pDeck.sort(() => Math.random() - 0.5); // Shuffle My Deck
 
     // 2. Setup Opponent Deck
     if (gameMode === 'solo') {
-        aiDeck = createAIDeck(); // AI creates its own deck
+        aiDeck = createAIDeck();
         aiDeck.sort(() => Math.random() - 0.5);
     } else {
-        aiDeck = []; // In multiplayer, we wait for the network to fill this
+        aiDeck = []; // Multiplayer: wait for network
     }
 
     // 3. Reset Board
@@ -252,10 +231,15 @@ async function init() {
     pHand = []; aiHand = [];
     actions = 0; discarded = false; selectedIdx = null; sacrifices = [];
     
+    stats = { 
+        atkDmgGiven: 0, atkDmgTaken: 0, skillDmgGiven: 0, skillDmgTaken: 0,
+        defDmgGiven: 0, defDmgTaken: 0, skillsUsed: 0, sacrifices: 0, 
+        startTime: Date.now(), endTime: 0 
+    };
+
     // 4. Draw Initial Hand (Me Only)
-    // In multiplayer, I draw my own cards first.
     for(let i=0; i<3; i++) {
-        let card = pDeck.shift(); // Draw from MY deck
+        let card = pDeck.shift();
         if(card) pHand.push(card);
     }
 
@@ -269,11 +253,10 @@ async function init() {
         render();
         addToLog("Duel started!", "sys");
     } else {
-        // Multiplayer: Stop here and tell the network what I have
+        // Multiplayer: Handshake
         await performMultiplayerHandshake();
     }
 }
-
 
 function createAIDeck() {
     let deck = [];
@@ -314,7 +297,6 @@ async function drawCardAnimated(deck, hand, isPlayer) {
 
 // ==========================================
 // SECTION 5: RENDER LOOP (VISUALS)
-// TROUBLESHOOTING: If cards disappear, or don't highlight when they should, copy this.
 // ==========================================
 
 function render() {
@@ -363,12 +345,11 @@ function render() {
         div.dataset.index = i; 
         if (!isProcessing) {
             div.onclick = () => { 
-    selectedIdx = i; 
-    sacrifices = []; 
-    if (isTutorial) tutorialSelectCard(i); // NEW HOOK
-    render(); 
-};
-
+                selectedIdx = i; 
+                sacrifices = []; 
+                if (isTutorial) tutorialSelectCard(i); 
+                render(); 
+            };
         }
         handDiv.appendChild(div);
     });
@@ -424,7 +405,6 @@ function renderField(id, card, col, owner) {
 
 // ==========================================
 // SECTION 6: PLAYER INTERACTIONS
-// TROUBLESHOOTING: If you can't play cards, sacrifice, or discard, check here.
 // ==========================================
 
 function payLifeToRemove(col) {
@@ -444,7 +424,7 @@ function getCost() {
     if (c.type === 'skl') return 0;
     if (c.type === 'def') return c.cost;
     let onBoard = pField.filter(x => x !== null).length;
-    if (c.type === 'atk' && onBoard === 0 && c.val === 10) return 0; // Rule: Free Colt
+    if (c.type === 'atk' && onBoard === 0 && c.val === 10) return 0; 
     return c.cost;
 }
 
@@ -459,13 +439,11 @@ function toggleSac(col) {
 }
 
 async function clickSlot(col) {
-    if (isTutorial) { tutorialClickSlot(col); return; } // HOOK
+    if (isTutorial) { tutorialClickSlot(col); return; } 
     
-    // ... rest of your existing clickSlot code ...
     if (isProcessing || selectedIdx === null || actions >= 2) return;
     
     const cardToPlay = pHand[selectedIdx];
-    // (Keep your existing logic exactly as is below this line)
     const costNeeded = getCost();
     const isSlotValid = (pField[col] === null || sacrifices.includes(col));
 
@@ -482,12 +460,8 @@ async function clickSlot(col) {
 
         if (cardElem && slotElem) await flyCard(cardElem, slotElem);
 
-        if (sacrifices.length > 0) {
-            stats.sacrifices += sacrifices.length;
-        }
-        if (cardToPlay.type === 'skl') {
-            stats.skillsUsed++;
-        }
+        if (sacrifices.length > 0) stats.sacrifices += sacrifices.length;
+        if (cardToPlay.type === 'skl') stats.skillsUsed++;
 
         sacrifices.forEach(s => pField[s] = null);
         let card = pHand.splice(selectedIdx, 1)[0];
@@ -501,9 +475,8 @@ async function clickSlot(col) {
     }
 }
 
-
 function discardCard() {
-    if (isTutorial) { tutorialDiscard(); return; } // HOOK
+    if (isTutorial) { tutorialDiscard(); return; } 
 
     if (selectedIdx !== null && !discarded && !isProcessing) {
         let c = pHand.splice(selectedIdx, 1)[0];
@@ -512,10 +485,8 @@ function discardCard() {
     }
 }
 
-
 // ==========================================
 // SECTION 7: ANIMATIONS
-// TROUBLESHOOTING: If GIFs or card movements look weird, this is the place.
 // ==========================================
 
 function flyCard(startElem, endElem) {
@@ -589,20 +560,17 @@ function animateDeath(slotId, cardName) {
     return new Promise(resolve => {
         const slot = document.getElementById(slotId);
         if(!slot || !slot.firstChild) { resolve(); return; }
-        
         const cardDiv = slot.firstChild;
         let animClass = 'destroy-std';
         if (cardName.includes('Blazing') || cardName.includes('Devil')) animClass = 'destroy-fire';
         else if (cardName.includes('Angelic')) animClass = 'destroy-holy';
-
         cardDiv.classList.add(animClass);
         setTimeout(() => { resolve(); }, 800); 
     });
 }
 
 // ==========================================
-// SECTION 8: COMBAT & AI LOGIC (THE BRAIN)
-// TROUBLESHOOTING: Check here if damage is calculated wrong or AI plays stupidly.
+// SECTION 8: COMBAT & AI LOGIC
 // ==========================================
 
 async function resolveCombat(offField, defField, isAiAtk) {
@@ -624,7 +592,6 @@ async function resolveCombat(offField, defField, isAiAtk) {
             if (def && def.type === 'def') {
                 atk.revealed = true; render(); await sleep(400);
                 addToLog(`${attackerName} used Castle Breaker!`, isAiAtk ? "ai" : "p");
-                addToLog(`${defenderName}'s ${def.name} was destroyed!`, "dmg");
                 flashSlot(defSlotId, 'hit');
                 await animateDeath(defSlotId, def.name);
                 defField[i] = null; 
@@ -643,45 +610,18 @@ async function resolveCombat(offField, defField, isAiAtk) {
                     
                     if (def.effect === 'disarm') {
                         offField[i] = null; dmg = 0; 
-                        addToLog(`${attackerName}'s ${atk.name} was Disarmed!`, "sys");
                         flashSlot(atkSlotId, 'block'); 
                     } 
                     else if (def.effect === 'reflect') {
-                        if (isAiAtk) { 
-                            aiHP -= dmg; 
-                            // AI took damage from Player's Skill
-                            // Note: isAiAtk means AI is attacking. Reflect means AI hurts itself.
-                            // So Player GAVE this damage via Skill.
-                            // However, we want to track stats for the PLAYER.
-                            // If isAiAtk (AI Turn), AI takes damage = Player gave Skill Dmg.
-                            // If !isAiAtk (Player Turn), Player takes damage = Player took Skill Dmg.
-                        } 
-                        else { 
-                            pHP -= dmg; 
-                            // Player Turn. Player Reflects? No, Enemy Reflects.
-                            // Player takes Skill Dmg.
-                            stats.skillDmgTaken += dmg; 
-                        }
-                        
-                        // Wait, let's simplify based on Perspective.
-                        // We track PLAYER STATS.
-                        if (isAiAtk) {
-                            // AI Attacking. Player Reflects.
-                            // AI takes damage. This is Player Skill Dmg Given.
-                            stats.skillDmgGiven += dmg;
-                        } else {
-                            // Player Attacking. AI Reflects.
-                            // Player takes damage. This is Player Skill Dmg Taken.
-                            stats.skillDmgTaken += dmg;
-                        }
-
+                        if (isAiAtk) { stats.skillDmgGiven += dmg; aiHP -= dmg; } 
+                        else { stats.skillDmgTaken += dmg; pHP -= dmg; }
                         addToLog(`Reflected ${dmg} dmg to ${attackerName}`, "dmg"); 
                         dmg = 0; flashSlot(atkSlotId, 'hit'); 
                     } 
                     else if (def.effect === 'supref') {
                         let refDmg = dmg * 2; 
-                        if (isAiAtk) { aiHP -= refDmg; stats.skillDmgGiven += refDmg; } 
-                        else { pHP -= refDmg; stats.skillDmgTaken += refDmg; }
+                        if (isAiAtk) { stats.skillDmgGiven += refDmg; aiHP -= refDmg; } 
+                        else { stats.skillDmgTaken += refDmg; pHP -= refDmg; }
                         addToLog(`Super Reflected ${refDmg} dmg to ${attackerName}!`, "dmg"); 
                         dmg = 0; flashSlot(atkSlotId, 'super'); 
                     } 
@@ -694,19 +634,13 @@ async function resolveCombat(offField, defField, isAiAtk) {
                 else if (def.type === 'def') {
                     if (def.val > dmg) {
                         let thorns = def.val - dmg; 
-                        if (isAiAtk) { aiHP -= thorns; stats.defDmgGiven += thorns; } 
-                        else { pHP -= thorns; stats.defDmgTaken += thorns; }
+                        if (isAiAtk) { stats.defDmgGiven += thorns; aiHP -= thorns; } 
+                        else { stats.defDmgTaken += thorns; pHP -= thorns; }
                         addToLog(`Thorn Damage! ${attackerName} took ${thorns}`, "dmg");
                         flashSlot(defSlotId, 'block'); flashSlot(atkSlotId, 'hit');   
                     }
-                    else if (def.val === dmg) {
-                        addToLog(`${def.name} blocked all dmg`, "sys");
-                        flashSlot(defSlotId, 'block'); 
-                    }
                     else {
-                         let blocked = def.val;
-                         addToLog(`${def.name} blocked ${blocked} dmg`, "sys");
-                         flashSlot(defSlotId, 'hit'); 
+                         flashSlot(defSlotId, dmg===def.val ? 'block' : 'hit'); 
                     }
                     dmg = Math.max(0, dmg - def.val);
                 }
@@ -716,9 +650,8 @@ async function resolveCombat(offField, defField, isAiAtk) {
             }
 
             if (dmg > 0) {
-                // Direct Attack Damage
-                if (isAiAtk) { pHP -= dmg; stats.atkDmgTaken += dmg; } 
-                else { aiHP -= dmg; stats.atkDmgGiven += dmg; }
+                if (isAiAtk) { stats.atkDmgTaken += dmg; pHP -= dmg; } 
+                else { stats.atkDmgGiven += dmg; aiHP -= dmg; }
                 addToLog(`${attackerName} dealt ${dmg} dmg with ${atk.name}`, "dmg");
             }
             await sleep(300); 
@@ -727,7 +660,6 @@ async function resolveCombat(offField, defField, isAiAtk) {
 }
 
 async function aiAction() {
-    // 1. CLEANUP
     if (aiHP > 15) {
         for(let i=0; i<3; i++) {
             let c = aiField[i];
@@ -751,7 +683,6 @@ async function aiAction() {
         }
     }
     
-    // 2. SCORE MOVES
     let possibleMoves = [];
     aiHand.forEach((card, hIdx) => {
         let cost = card.cost; 
@@ -781,10 +712,8 @@ async function aiAction() {
         }
     });
     
-    possibleMoves = possibleMoves.filter(m => m.score > -200);
     possibleMoves.sort((a, b) => b.score - a.score);
     
-    // 3. EXECUTE BEST MOVE
     if (possibleMoves.length > 0 && possibleMoves[0].score > 50) {
         let best = possibleMoves[0];
         const handDiv = document.getElementById('ai-hand');
@@ -793,9 +722,7 @@ async function aiAction() {
         if (cardElem && slotElem) await flyCard(cardElem, slotElem);
 
         best.sacrifices.forEach(idx => aiField[idx] = null);
-        if(best.sacrifices.length > 0) addToLog(`AI sacrificed ${best.sacrifices.length} card(s)`, "ai");
         
-        addToLog(`AI summoned ${best.card.name}`, "ai");
         let newCard = {...best.card, charging: (best.card.type === 'atk')};
         if(newCard.type === 'skl') newCard.revealed = false; 
         
@@ -804,7 +731,6 @@ async function aiAction() {
         return;
     } 
     
-    // 4. DISCARD IF NO MOVES
     if (aiHand.length > 0) {
         aiHand.sort((a, b) => getDiscardPriority(b) - getDiscardPriority(a));
         let discarded = aiHand.shift(); 
@@ -877,7 +803,6 @@ function getCardValue(card) {
 
 // ==========================================
 // SECTION 9: UTILITIES & SYSTEM
-// TROUBLESHOOTING: Logging, menu toggles, and loop control.
 // ==========================================
 
 function checkGameOver(reason = "") {
@@ -903,20 +828,14 @@ function showGameOverScreen(isWin, reason) {
     // Points Calc
     let score = 0;
     let timeBonus = 0;
-    
-    // Calculate Multiplied Points (x10)
     let ptsCards = pDeck.length * 10;
-    
     let ptsAtkGiven = stats.atkDmgGiven * 10;
     let ptsAtkTaken = stats.atkDmgTaken * 10;
-    
     let ptsSkillUsed = stats.skillsUsed * 10;
     let ptsSkillGiven = stats.skillDmgGiven * 10;
     let ptsSkillTaken = stats.skillDmgTaken * 10;
-    
     let ptsDefGiven = stats.defDmgGiven * 10;
     let ptsDefTaken = stats.defDmgTaken * 10;
-    
     let ptsSac = stats.sacrifices * 10;
 
     if (isWin) {
@@ -927,7 +846,6 @@ function showGameOverScreen(isWin, reason) {
         else if (totalSeconds > 300) timeBonus = 10;
         else timeBonus = 100 - Math.floor((totalSeconds - 60) * (90 / 240));
 
-        // Score Formula
         let totalGiven = ptsAtkGiven + ptsSkillGiven + ptsDefGiven;
         let totalTaken = ptsAtkTaken + ptsSkillTaken + ptsDefTaken;
         
@@ -942,17 +860,13 @@ function showGameOverScreen(isWin, reason) {
 
     // UPDATE DOM
     document.getElementById('val-cards').innerText = pDeck.length;
-    
     document.getElementById('val-atk-given').innerText = stats.atkDmgGiven;
     document.getElementById('val-atk-taken').innerText = stats.atkDmgTaken;
-    
     document.getElementById('val-skl-used').innerText = stats.skillsUsed;
     document.getElementById('val-skl-given').innerText = stats.skillDmgGiven;
     document.getElementById('val-skl-taken').innerText = stats.skillDmgTaken;
-    
     document.getElementById('val-def-given').innerText = stats.defDmgGiven;
     document.getElementById('val-def-taken').innerText = stats.defDmgTaken;
-    
     document.getElementById('val-sac').innerText = stats.sacrifices;
     document.getElementById('val-time').innerText = timeString;
     
@@ -969,7 +883,6 @@ function showGameOverScreen(isWin, reason) {
         document.getElementById('pts-sac').innerText = `+${ptsSac}`;
         document.getElementById('pts-time').innerText = `+${timeBonus}`;
     } else {
-        // Loser sees 0 points everywhere except "Final Score" (10)
         let elements = document.getElementsByClassName('pts-plus');
         for(let el of elements) el.innerText = "+0";
         elements = document.getElementsByClassName('pts-minus');
@@ -993,15 +906,13 @@ function concedeGame() {
 }
 
 async function endTurn() {
-    if (isTutorial) { tutorialEndTurn(); return; } // HOOK
+    if (isTutorial) { tutorialEndTurn(); return; } 
 
-    // ... rest of your existing endTurn code ...
     isProcessing = true;
     render(); 
     
     addToLog("--- Enemy Reaction ---", "sys");
     await resolveCombat(aiField, pField, true); 
-    // (Keep the rest of your standard logic)
     render();
     if(checkGameOver()) { isProcessing = false; return; }
     await sleep(400);
@@ -1036,8 +947,6 @@ async function endTurn() {
     checkGameOver();
 }
 
-
-// Helpers
 function addToLog(msg, type = "sys") {
     const ul = document.getElementById('game-log');
     if(!ul) return;
@@ -1111,11 +1020,9 @@ function testDevDeath(animClass) {
 
 async function performMultiplayerHandshake() {
     roomRef = db.ref('rooms/' + currentRoomId);
-    
     addToLog("Waiting for opponent...", "sys");
 
-    // 1. Upload MY Hand & Deck to my specific slot
-    // If I am Host, I save to '/host'. If Guest, to '/guest'.
+    // 1. Upload MY Hand & Deck
     const myData = {
         hand: pHand,
         deck: pDeck,
@@ -1129,11 +1036,7 @@ async function performMultiplayerHandshake() {
     
     roomRef.child(oppRole).on('value', (snapshot) => {
         const oppData = snapshot.val();
-        
-        // Only proceed if opponent has actually uploaded their hand
         if (oppData && oppData.hand) {
-            
-            // 3. Save their data as my "AI" (Opponent) variables
             aiHand = oppData.hand || [];
             aiDeck = oppData.deck || [];
             aiHP = oppData.hp || 60;
@@ -1141,21 +1044,13 @@ async function performMultiplayerHandshake() {
             addToLog("Opponent Connected!", "sys");
             render();
             
-            // Turn off this specific listener so it doesn't fire every time they move
+            // Unsubscribe handshake listener
             roomRef.child(oppRole).off();
-            
-            // Start the main game listener (for playing cards later)
-            // startMultiplayerListener(); 
         }
     });
 }
 
-
-let currentRoomId = null;
-let playerRole = null; // 'host' or 'guest'
-
 function createRoom() {
-    // 1. Generate a random 4-digit code
     const code = Math.floor(1000 + Math.random() * 9000).toString();
     currentRoomId = code;
     playerRole = 'host';
@@ -1163,21 +1058,20 @@ function createRoom() {
     document.getElementById('room-code').value = code;
     document.getElementById('lobby-status').innerText = "Creating room... waiting for opponent...";
     
-    // 2. Create the room in Firebase
     db.ref('rooms/' + code).set({
         host: { status: 'waiting' },
         guest: { status: 'empty' },
-        turn: 'host', // Host always goes first
+        turn: 'host', 
         lastMove: null
-    });
-
-    // 3. Listen for Guest to join
-    db.ref('rooms/' + code + '/guest').on('value', (snapshot) => {
-        const data = snapshot.val();
-        if (data && data.status === 'joined') {
-            document.getElementById('lobby-status').innerText = "Opponent found! Starting...";
-            setTimeout(() => startMultiplayerGame(), 1000);
-        }
+    }).then(() => {
+        db.ref('rooms/' + code + '/guest/status').on('value', (snapshot) => {
+            if (snapshot.val() === 'joined') {
+                document.getElementById('lobby-status').innerText = "Opponent found! Starting...";
+                setTimeout(() => startMultiplayerGame(), 1000);
+            }
+        });
+    }).catch((err) => {
+        alert("Firebase Error: " + err.message);
     });
 }
 
@@ -1190,11 +1084,9 @@ function joinRoom() {
     
     document.getElementById('lobby-status').innerText = "Joining room...";
     
-    // 1. Check if room exists
     db.ref('rooms/' + code).once('value', (snapshot) => {
         if (snapshot.exists()) {
-            // 2. Join the room
-            db.ref('rooms/' + code + '/guest').set({ status: 'joined' });
+            db.ref('rooms/' + code + '/guest').update({ status: 'joined' });
             document.getElementById('lobby-status').innerText = "Joined! Starting game...";
             setTimeout(() => startMultiplayerGame(), 1000);
         } else {
@@ -1206,14 +1098,12 @@ function joinRoom() {
 
 function startMultiplayerGame() {
     gameMode = 'multi';
-    myRole = playerRole; // 'host' or 'guest' set by the lobby
+    myRole = playerRole; 
     
-    // UI Switch
     document.getElementById('start-screen').classList.add('hidden');
     document.getElementById('game-container').classList.remove('hidden');
     document.getElementById('top-bar').classList.remove('hidden');
     document.getElementById('btn-menu').style.display = 'block';
 
-    // Start the game!
     init(); 
 }
