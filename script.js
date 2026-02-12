@@ -3,13 +3,10 @@ const IMAGES = "images/";
 // ==========================================
 // SECTION 0: FIREBASE CONFIGURATION
 // ==========================================
-
 const firebaseConfig = {
   apiKey: "AIzaSyCP4X7cTUNbWLKMnDrS6JRXhZkWrCrg_b8",
   authDomain: "ctktcgo.firebaseapp.com",
-
-	databaseURL: https://ctktcgo-default-rtdb.firebaseio.com,
-
+  databaseURL: "https://ctktcgo-default-rtdb.firebaseio.com",
   projectId: "ctktcgo",
   storageBucket: "ctktcgo.firebasestorage.app",
   messagingSenderId: "942928938877",
@@ -21,17 +18,10 @@ const firebaseConfig = {
 if (!firebase.apps.length) {
     firebase.initializeApp(firebaseConfig);
 }
-
-// Create Global Database Reference
 const db = firebase.database();
 const auth = firebase.auth();
 
-if (db) {
-    alert("SUCCESS: Firebase Connected!");
-} else {
-    alert("ERROR: Database not found.");
-}
-
+console.log("Firebase Connected!", db);
 
 
 
