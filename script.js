@@ -350,118 +350,174 @@ async function drawCardAnimated(deck, hand, isPlayer) {
 }
 
 // ==========================================
-// SECTION 5: RENDER LOOP
+// SECTION 5: RENDER LOOP (SMART UPDATES)
 // ==========================================
+
 function render() {
     document.getElementById('p-hp').innerText = pHP;
     document.getElementById('ai-hp').innerText = aiHP;
     
-    const disabledState = (isProcessing || !isMyTurn); // BLOCK CLICKS IF NOT MY TURN
+    const disabledState = (isProcessing || !isMyTurn);
     document.getElementById('btn-discard').disabled = (discarded || selectedIdx === null || disabledState);
     document.getElementById('btn-end').disabled = disabledState;
 
-    // UPDATE STATUS TEXT
+    // Status Text
+    const preview = document.getElementById('selection-preview');
     if (gameMode === 'multi') {
-        const preview = document.getElementById('selection-preview');
         if (!isMyTurn) preview.innerText = "OPPONENT'S TURN";
         else if (selectedIdx === null) preview.innerText = "YOUR TURN";
     }
-
-    const preview = document.getElementById('selection-preview');
     if (selectedIdx !== null) preview.innerText = pHand[selectedIdx].name.toUpperCase();
 
-    // AI HAND
-    const aiHandDiv = document.getElementById('ai-hand');
-    aiHandDiv.innerHTML = '';
-    aiHand.forEach((c, i) => {
-        const div = document.createElement('div');
-        div.className = 'card';
-        div.style.backgroundImage = `url('${IMAGES}cardbacks/cardback.png')`;
-        if (c.animState === 'entering') div.classList.add('anim-entry');
-        div.dataset.aiIndex = i; 
-        aiHandDiv.appendChild(div);
-    });
+    // 1. Smart Render Hands (No flickering!)
+    syncHandDOM('ai-hand', aiHand, false);
+    syncHandDOM('hand', pHand, true);
 
-    // PLAYER HAND
-    const handDiv = document.getElementById('hand');
-    handDiv.innerHTML = '';
-    pHand.forEach((c, i) => {
-        const div = document.createElement('div');
-        let classes = `card ${selectedIdx === i ? 'selected' : ''}`;
-        
-        if (c.animState === 'entering') {
-            classes += ' anim-entry';
-            div.style.backgroundImage = `url('${IMAGES}cardbacks/cardback.png')`;
-        } 
-        else if (c.animState === 'flipping') {
-            classes += ' anim-flip-in';
-            div.style.backgroundImage = `url('${IMAGES}${c.img}')`;
-        }
-        else {
-            div.style.backgroundImage = `url('${IMAGES}${c.img}')`;
-        }
-
-        div.className = classes;
-        div.dataset.index = i; 
-        if (!isProcessing && isMyTurn) { // ONLY CLICK IF MY TURN
-            div.onclick = () => { 
-                selectedIdx = i; 
-                sacrifices = []; 
-                if (isTutorial) tutorialSelectCard(i); 
-                render(); 
-            };
-        }
-        handDiv.appendChild(div);
-    });
-
+    // 2. Smart Render Field
     for(let i=0; i<3; i++) {
         renderField('p-'+i, pField[i], i, 'p');
         renderField('ai-'+i, aiField[i], i, 'ai');
     }
 }
 
+// --- HELPER: Efficiently updates hands without clearing HTML ---
+function syncHandDOM(containerId, cardList, isPlayer) {
+    const container = document.getElementById(containerId);
+    if (!container) return;
+
+    // A. Remove excess cards (if you played/discarded one)
+    while (container.children.length > cardList.length) {
+        container.removeChild(container.lastChild);
+    }
+
+    // B. Update or Create existing cards
+    cardList.forEach((c, i) => {
+        let div = container.children[i];
+
+        // Create if missing
+        if (!div) {
+            div = document.createElement('div');
+            container.appendChild(div);
+        }
+
+        // Calculate Background Image
+        let bgUrl = `url('${IMAGES}cardbacks/cardback.png')`; // Default hidden
+        if (isPlayer || c.revealed) {
+            bgUrl = `url('${IMAGES}${c.img}')`;
+        }
+        
+        // ONLY update style if it changed (Prevents image reloading blink)
+        if (div.style.backgroundImage !== bgUrl) {
+            div.style.backgroundImage = bgUrl;
+        }
+
+        // Build Class String
+        let cls = 'card';
+        if (isPlayer && selectedIdx === i) cls += ' selected';
+        if (c.animState === 'entering') cls += ' anim-entry';
+        if (c.animState === 'flipping') cls += ' anim-flip-in';
+        
+        // Only touch DOM className if needed
+        if (div.className !== cls) div.className = cls;
+
+        // Dataset updates
+        if (isPlayer) div.dataset.index = i;
+        else div.dataset.aiIndex = i;
+
+        // Event Listener (Re-bind to ensure index is correct)
+        if (isPlayer && !isProcessing && isMyTurn) {
+            div.onclick = () => { 
+                selectedIdx = i; 
+                sacrifices = []; 
+                if (isTutorial) tutorialSelectCard(i); 
+                render(); 
+            };
+        } else {
+            div.onclick = null;
+        }
+    });
+}
+
+// --- HELPER: Efficiently updates Field Slots ---
 function renderField(id, card, col, owner) {
     const slot = document.getElementById(id);
     if (!slot) return;
-    slot.innerHTML = '';
-    slot.classList.remove('highlight');
     
-    if(card) {
-        const div = document.createElement('div');
-        const isSacTarget = sacrifices.includes(col);
-        div.className = `card ${card.charging ? 'charging' : ''} ${isSacTarget ? 'sac-target' : ''}`;
+    slot.classList.remove('highlight'); // Always reset highlight
+    
+    // Check if there is already a card div inside this slot
+    let div = slot.firstElementChild;
+
+    // CASE 1: Slot is empty in data
+    if (!card) {
+        if (div) div.remove(); // Remove div if it shouldn't be there
         
-        if (owner === 'ai' && card.type === 'skl' && !card.revealed) {
-            div.style.backgroundImage = `url('${IMAGES}cardbacks/cardback.png')`;
-        } else {
-            div.style.backgroundImage = `url('${IMAGES}${card.img}')`;
-        }
-        if (owner === 'p' && card.type === 'skl') div.classList.add('skill-dark');
+        // Handle Slot Highlight for Player (Empty slot is playable)
+        if (selectedIdx !== null && owner === 'p' && !isProcessing && isMyTurn) {
+             const cost = getCost();
+             const isSacReady = (sacrifices.includes(col) || pField[col]===null); 
+             // Note: since card is null, pField[col] is null.
+             
+             // Check Lane Rules
+             const cardToPlay = pHand[selectedIdx];
+             const laneFree = !(cardToPlay.type === 'atk' && aiField[col] && aiField[col].type === 'atk');
 
-        if(owner === 'p' && !isProcessing && isMyTurn) {
-            div.onclick = (e) => { 
-                e.stopPropagation(); 
-                if (card.type === 'skl' && !isSacTarget && selectedIdx === null) {
-                    payLifeToRemove(col); return;
-                }
-                if (isSacTarget && sacrifices.length === getCost()) clickSlot(col);
-                else toggleSac(col); 
-            };
+             if (sacrifices.length === cost && laneFree) {
+                 slot.classList.add('highlight');
+             }
         }
+        return;
+    }
+
+    // CASE 2: Slot has a card (Create or Update div)
+    if (!div) {
+        div = document.createElement('div');
         slot.appendChild(div);
-    } 
+    }
 
+    // Smart Style Update
+    let bgUrl = `url('${IMAGES}${card.img}')`;
+    if (owner === 'ai' && card.type === 'skl' && !card.revealed) {
+        bgUrl = `url('${IMAGES}cardbacks/cardback.png')`;
+    }
+    
+    if (div.style.backgroundImage !== bgUrl) {
+        div.style.backgroundImage = bgUrl;
+    }
+
+    // Classes
+    const isSacTarget = sacrifices.includes(col);
+    let cls = `card`;
+    if (card.charging) cls += ' charging';
+    if (isSacTarget) cls += ' sac-target';
+    if (owner === 'p' && card.type === 'skl') cls += ' skill-dark';
+
+    if (div.className !== cls) div.className = cls;
+
+    // Events
+    if (owner === 'p' && !isProcessing && isMyTurn) {
+        div.onclick = (e) => { 
+            e.stopPropagation(); 
+            // Remove Skill Logic
+            if (card.type === 'skl' && !isSacTarget && selectedIdx === null) {
+                payLifeToRemove(col); return;
+            }
+            // Sacrifice Logic
+            if (isSacTarget && sacrifices.length === getCost()) clickSlot(col);
+            else toggleSac(col); 
+        };
+    } else {
+        div.onclick = null;
+    }
+
+    // Highlight Logic (If sacrificing this specific card)
     if (selectedIdx !== null && owner === 'p' && !isProcessing && isMyTurn) {
-        const costNeeded = getCost();
-        const cardToPlay = pHand[selectedIdx];
-        const isSlotAvailable = (pField[col] === null || sacrifices.includes(col));
-        const laneRulePassed = !(cardToPlay.type === 'atk' && aiField[col] && aiField[col].type === 'atk');
-
-        if (sacrifices.length === costNeeded && isSlotAvailable && laneRulePassed) {
+        if (isSacTarget && sacrifices.length === getCost()) {
             slot.classList.add('highlight');
         }
     }
 }
+
 
 // ==========================================
 // SECTION 6: INTERACTIONS
