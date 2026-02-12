@@ -54,6 +54,12 @@ const SKILL_POOL = [
 // TROUBLESHOOTING: If the game forgets your score or deck, this section is responsible.
 // ==========================================
 
+let gameMode = 'solo'; // 'solo' or 'multi'
+let myRole = null;     // 'host' or 'guest'
+let currentRoomId = null;
+let roomRef = null;
+
+
 let playerSkills = {}; 
 let currentPoints = 0;
 const MAX_POINTS = 15;
@@ -223,48 +229,51 @@ function updateBuilderUI() {
 // ==========================================
 
 async function init() {
-    // 1. Build Player Deck
+    // 1. Setup My Deck (Standard Logic)
     pDeck = [];
     BASE_DECK.forEach(card => { for(let i=0; i<card.count; i++) pDeck.push({...card}); });
-    SKILL_POOL.forEach(skill => {
-        let qty = playerSkills[skill.id] || 0;
-        for(let i=0; i<qty; i++) {
-            pDeck.push({ name: skill.name, type: "skl", val: 0, cost: 0, img: skill.img, effect: skill.effect, count: 1 });
-        }
-    });
+    
+    // (Add Skills if you have them implemented)
+    // SKILL_POOL.forEach(...) 
+    
+    pDeck.sort(() => Math.random() - 0.5); // Shuffle My Deck
 
-    // 2. Build AI Deck
-    aiDeck = createAIDeck();
+    // 2. Setup Opponent Deck
+    if (gameMode === 'solo') {
+        aiDeck = createAIDeck(); // AI creates its own deck
+        aiDeck.sort(() => Math.random() - 0.5);
+    } else {
+        aiDeck = []; // In multiplayer, we wait for the network to fill this
+    }
 
-    // 3. Shuffle & Reset
-    pDeck.sort(() => Math.random() - 0.5);
-    aiDeck.sort(() => Math.random() - 0.5);
+    // 3. Reset Board
     pHP = 60; aiHP = 60; turnCount = 1;
     pField = [null, null, null]; aiField = [null, null, null];
     pHand = []; aiHand = [];
     actions = 0; discarded = false; selectedIdx = null; sacrifices = [];
     
-    // RESET STATS (Detailed)
-    stats = { 
-        atkDmgGiven: 0, atkDmgTaken: 0, 
-        skillDmgGiven: 0, skillDmgTaken: 0,
-        defDmgGiven: 0, defDmgTaken: 0,
-        skillsUsed: 0, sacrifices: 0, 
-        startTime: Date.now(), endTime: 0 
-    };
-    
-    document.getElementById('game-log').innerHTML = '';
-    addToLog("Duel started!", "sys");
-
-    // 4. ANIMATED DEALING
-    isProcessing = true;
+    // 4. Draw Initial Hand (Me Only)
+    // In multiplayer, I draw my own cards first.
     for(let i=0; i<3; i++) {
-        await drawCardAnimated(pDeck, pHand, true);
-        await drawCardAnimated(aiDeck, aiHand, false);
+        let card = pDeck.shift(); // Draw from MY deck
+        if(card) pHand.push(card);
     }
-    isProcessing = false;
-    render();
+
+    // 5. The Fork (Solo vs Multi)
+    if (gameMode === 'solo') {
+        // AI Draws immediately
+        for(let i=0; i<3; i++) {
+            let card = aiDeck.shift();
+            aiHand.push(card);
+        }
+        render();
+        addToLog("Duel started!", "sys");
+    } else {
+        // Multiplayer: Stop here and tell the network what I have
+        await performMultiplayerHandshake();
+    }
 }
+
 
 function createAIDeck() {
     let deck = [];
@@ -1100,6 +1109,48 @@ function testDevDeath(animClass) {
 // SECTION 10: MULTIPLAYER LOBBY
 // ==========================================
 
+async function performMultiplayerHandshake() {
+    roomRef = db.ref('rooms/' + currentRoomId);
+    
+    addToLog("Waiting for opponent...", "sys");
+
+    // 1. Upload MY Hand & Deck to my specific slot
+    // If I am Host, I save to '/host'. If Guest, to '/guest'.
+    const myData = {
+        hand: pHand,
+        deck: pDeck,
+        hp: pHP
+    };
+    
+    await roomRef.child(myRole).update(myData);
+
+    // 2. Listen for OPPONENT'S Hand & Deck
+    const oppRole = (myRole === 'host') ? 'guest' : 'host';
+    
+    roomRef.child(oppRole).on('value', (snapshot) => {
+        const oppData = snapshot.val();
+        
+        // Only proceed if opponent has actually uploaded their hand
+        if (oppData && oppData.hand) {
+            
+            // 3. Save their data as my "AI" (Opponent) variables
+            aiHand = oppData.hand || [];
+            aiDeck = oppData.deck || [];
+            aiHP = oppData.hp || 60;
+            
+            addToLog("Opponent Connected!", "sys");
+            render();
+            
+            // Turn off this specific listener so it doesn't fire every time they move
+            roomRef.child(oppRole).off();
+            
+            // Start the main game listener (for playing cards later)
+            // startMultiplayerListener(); 
+        }
+    });
+}
+
+
 let currentRoomId = null;
 let playerRole = null; // 'host' or 'guest'
 
@@ -1154,6 +1205,15 @@ function joinRoom() {
 }
 
 function startMultiplayerGame() {
-    alert(`Game Started! You are: ${playerRole.toUpperCase()}`);
-    // We will hook this up to the actual game logic in Phase 2
+    gameMode = 'multi';
+    myRole = playerRole; // 'host' or 'guest' set by the lobby
+    
+    // UI Switch
+    document.getElementById('start-screen').classList.add('hidden');
+    document.getElementById('game-container').classList.remove('hidden');
+    document.getElementById('top-bar').classList.remove('hidden');
+    document.getElementById('btn-menu').style.display = 'block';
+
+    // Start the game!
+    init(); 
 }
