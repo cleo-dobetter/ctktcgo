@@ -385,51 +385,46 @@ function syncHandDOM(containerId, cardList, isPlayer) {
     const container = document.getElementById(containerId);
     if (!container) return;
 
-    // A. Remove excess cards (if you played/discarded one)
-    while (container.children.length > cardList.length) {
-        container.removeChild(container.lastChild);
+    // 1. Clear the hand only if the count changed (prevents the big blink)
+    if (container.children.length !== cardList.length) {
+        container.innerHTML = '';
     }
 
-    // B. Update or Create existing cards
     cardList.forEach((c, i) => {
         let div = container.children[i];
 
-        // Create if missing
+        // 2. If the card div doesn't exist, create it
         if (!div) {
             div = document.createElement('div');
             container.appendChild(div);
         }
 
-        // Calculate Background Image
-        let bgUrl = `url('${IMAGES}cardbacks/cardback.png')`; // Default hidden
+        // 3. Set the background image
+        let bgUrl = `url('${IMAGES}cardbacks/cardback.png')`;
         if (isPlayer || c.revealed) {
             bgUrl = `url('${IMAGES}${c.img}')`;
         }
         
-        // ONLY update style if it changed (Prevents image reloading blink)
+        // Update ONLY if it's different to prevent the "blink"
         if (div.style.backgroundImage !== bgUrl) {
             div.style.backgroundImage = bgUrl;
+            div.style.backgroundSize = "cover";
         }
 
-        // Build Class String
+        // 4. Update Classes (Selection, Animation, etc)
         let cls = 'card';
         if (isPlayer && selectedIdx === i) cls += ' selected';
         if (c.animState === 'entering') cls += ' anim-entry';
         if (c.animState === 'flipping') cls += ' anim-flip-in';
         
-        // Only touch DOM className if needed
         if (div.className !== cls) div.className = cls;
 
-        // Dataset updates
-        if (isPlayer) div.dataset.index = i;
-        else div.dataset.aiIndex = i;
-
-        // Event Listener (Re-bind to ensure index is correct)
+        // 5. Update Clicks
+        div.dataset.index = i; // Critical: keeps the index synced
         if (isPlayer && !isProcessing && isMyTurn) {
             div.onclick = () => { 
                 selectedIdx = i; 
                 sacrifices = []; 
-                if (isTutorial) tutorialSelectCard(i); 
                 render(); 
             };
         } else {
