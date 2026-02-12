@@ -22,6 +22,67 @@ const auth = firebase.auth();
 console.log("Firebase Connected!", db);
 
 // ==========================================
+// SECTION 0.5: ASSET PRELOADER
+// ==========================================
+
+const ALL_ASSETS = [
+    "cardbacks/cardback.png",
+    "animations/cardani/stallion.gif",
+    // Add any other UI images here if you have them
+];
+
+// 1. Harvest all Card Images automatically
+BASE_DECK.forEach(card => ALL_ASSETS.push(card.img));
+SKILL_POOL.forEach(skill => ALL_ASSETS.push(skill.img));
+
+let assetsLoaded = 0;
+
+function preloadGame() {
+    const totalAssets = ALL_ASSETS.length;
+    const bar = document.getElementById('loading-bar');
+    const txt = document.getElementById('loading-text');
+
+    if (totalAssets === 0) {
+        finishLoading();
+        return;
+    }
+
+    ALL_ASSETS.forEach(filename => {
+        const img = new Image();
+        img.src = IMAGES + filename;
+        
+        img.onload = () => {
+            assetsLoaded++;
+            const percent = Math.floor((assetsLoaded / totalAssets) * 100);
+            bar.style.width = percent + "%";
+            txt.innerText = `Loading Assets... ${percent}%`;
+
+            if (assetsLoaded === totalAssets) {
+                setTimeout(finishLoading, 500); // Small pause for effect
+            }
+        };
+
+        img.onerror = () => {
+            console.error("Failed to load:", filename);
+            assetsLoaded++; // Count it anyway so game doesn't hang
+            if (assetsLoaded === totalAssets) finishLoading();
+        };
+    });
+}
+
+function finishLoading() {
+    const screen = document.getElementById('loading-screen');
+    screen.style.opacity = '0';
+    setTimeout(() => {
+        screen.classList.add('hidden');
+    }, 1000); // Fade out transition
+}
+
+// START LOADING IMMEDIATELY
+window.onload = preloadGame;
+
+
+// ==========================================
 // SECTION 1: GAME CONFIGURATION
 // ==========================================
 const BASE_DECK = [
