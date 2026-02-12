@@ -828,16 +828,37 @@ function concedeGame() {
 async function endTurn() {
     if (isTutorial) { tutorialEndTurn(); return; } 
 
-    // *** MULTIPLAYER ***
+    // ============================
+    // MULTIPLAYER LOGIC
+    // ============================
     if (gameMode === 'multi') {
-        sendMultiplayerMove('endTurn', {});
-        isMyTurn = false; // Stop Player from clicking
+        isProcessing = true; // Lock UI
+
+        // 1. THE ENEMY STRIKES BACK!
+        // It is the end of my turn, so the Opponent's cards (aiField) wake up and attack Me.
+        
+        addToLog("--- Opponent Counter-Attack ---", "sys");
+        
+        // Force wake up enemy cards (remove charging status so they can attack)
+        aiField.forEach(c => { if(c) c.charging = false; });
+        
+        // Resolve Combat: AI (Opponent) attacks Player (Me)
+        await resolveCombat(aiField, pField, true); 
+        
+        // 2. Send the result to the network
+        // We send our new HP so the opponent can sync up
+        sendMultiplayerMove('endTurn', { resultingHp: pHP });
+        
+        isMyTurn = false; 
         render();
-        // Wait for opponent to send "End Turn" back
+        checkGameOver(); // Did I die from the counter-attack?
+        isProcessing = false;
         return;
     }
 
-    // *** SOLO MODE ***
+    // ============================
+    // SOLO LOGIC (Standard AI)
+    // ============================
     isProcessing = true;
     render(); 
     
@@ -876,6 +897,7 @@ async function endTurn() {
     render();
     checkGameOver();
 }
+
 
 function addToLog(msg, type = "sys") {
     const ul = document.getElementById('game-log');
@@ -966,7 +988,6 @@ function startMultiplayerListener() {
     const oppRole = (myRole === 'host') ? 'guest' : 'host';
     const movePath = (oppRole === 'host') ? 'hostMove' : 'guestMove';
 
-    // LISTEN FOR OPPONENT MOVES
     roomRef.child(movePath).on('value', async (snapshot) => {
         const move = snapshot.val();
         if (!move) return;
@@ -977,30 +998,27 @@ function startMultiplayerListener() {
         window.lastMoveTime = move.timestamp;
 
         if (move.type === 'play') {
-            // MIRROR THE MOVE
             const cardIdx = move.data.cardIndex;
             const slot = move.data.slot;
             const sacs = move.data.sacrifices || [];
 
-            // 1. Process Sacrifices (Visuals only, no logic check needed)
-            sacs.forEach(sIdx => {
-                // Opponent sacrificed their own card (which is in aiField for me)
-                aiField[sIdx] = null; 
-            });
+            // Visual Sacrifice
+            sacs.forEach(sIdx => { aiField[sIdx] = null; });
 
-            // 2. Animate Card from Hand
+            // Visual Fly Card
             const handDiv = document.getElementById('ai-hand');
             const cardElem = Array.from(handDiv.children).find(el => el.dataset.aiIndex == cardIdx);
             const slotElem = document.getElementById(`ai-${slot}`);
             
             if (cardElem && slotElem) await flyCard(cardElem, slotElem);
 
-            // 3. Move Data
+            // Logic Update
             let card = aiHand.splice(cardIdx, 1)[0];
-            card.charging = (card.type === 'atk'); // Reset charge
-            if(card.type === 'skl') card.revealed = false; // Hide skills
-            aiField[slot] = card;
+            card.charging = true; // NEW: Opponent played it, so it is charging
+            if(card.type === 'atk') card.charging = true; 
+            if(card.type === 'skl') card.revealed = false; 
             
+            aiField[slot] = card;
             render();
         } 
         else if (move.type === 'discard') {
@@ -1017,42 +1035,49 @@ function startMultiplayerListener() {
             render();
         }
         else if (move.type === 'endTurn') {
-            // OPPONENT ENDED TURN -> MY TURN STARTS
+            // ============================
+            // TURN HANDOVER SEQUENCE
+            // ============================
             addToLog("Opponent ended turn.", "sys");
             
-            // 1. Resolve Combat (My Field vs Their Field)
-            // Note: In Multi, we run this locally. 
-            // Both players run this function at the start of their own turn.
+            // 1. MY COUNTER-ATTACK!
+            // The opponent is ending their turn, so MY cards (pField) wake up and attack them.
+            addToLog("--- My Counter-Attack ---", "sys");
+
+            // Wake up my cards
+            pField.forEach(c => { if(c) c.charging = false; });
+
+            // Resolve Combat: Player (Me) attacks AI (Opponent)
+            await resolveCombat(pField, aiField, false);
             
-            addToLog("--- Combat Phase ---", "sys");
-            // Resolve My Field attacking AI Field (Wait... flipped?)
-            // If opponent ended turn, it means *they* just attacked *me*.
-            // So we resolve AI Field attacking Player Field.
-            await resolveCombat(aiField, pField, true);
-            
-            // 2. Start My Turn
+            // 2. Sync HP (Safety Check)
+            // If the opponent calculated they took 10 dmg, but I calculated 0, we have a problem.
+            // For now, let's trust our local calculation, but log the difference.
+            if (move.data.resultingHp !== undefined) {
+                // Optional: You could force sync here: aiHP = move.data.resultingHp;
+                console.log(`HP Sync Check - My Calc: ${aiHP}, Their Calc: ${move.data.resultingHp}`);
+            }
+
+            // 3. Start My Main Phase
             isMyTurn = true;
             actions = 0; discarded = false; turnCount++;
             
-            // 3. Draw Cards
+            // Draw Cards
             while(pHand.length < 3) {
                 if (pDeck.length === 0) { checkGameOver("DEFEAT! Decked Out."); return; }
                 await drawCardAnimated(pDeck, pHand, true);
             }
-             // 4. Fill Opponent Hand (Visuals)
             while(aiHand.length < 3) {
                  if (aiDeck.length === 0) { checkGameOver("VICTORY! AI Decked Out."); return; }
                  await drawCardAnimated(aiDeck, aiHand, false);
             }
             
-            // 5. Reset Charge
-            pField.forEach(c => { if(c) c.charging = false; });
-            aiField.forEach(c => { if(c) c.charging = false; });
-
             render();
+            checkGameOver();
         }
     });
 }
+
 
 function sendMultiplayerMove(actionType, data) {
     if (gameMode !== 'multi') return;
