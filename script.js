@@ -21,81 +21,6 @@ const db = firebase.database();
 const auth = firebase.auth();
 console.log("Firebase Connected!", db);
 
-// ==========================================
-// SECTION 0.5: ASSET PRELOADER (FIXED)
-// ==========================================
-
-const ALL_ASSETS = [
-    "cardbacks/cardback.png",
-    // Add any manual images here if needed
-];
-
-// Harvest images from data
-BASE_DECK.forEach(card => { if(card.img) ALL_ASSETS.push(card.img); });
-SKILL_POOL.forEach(skill => { if(skill.img) ALL_ASSETS.push(skill.img); });
-
-let assetsLoaded = 0;
-
-function preloadGame() {
-    const totalAssets = ALL_ASSETS.length;
-    const bar = document.getElementById('loading-bar');
-    const txt = document.getElementById('loading-text');
-
-    // SAFETY NET: Force start after 4 seconds if stuck
-    setTimeout(() => {
-        if (assetsLoaded < totalAssets) {
-            console.log("Preloader timed out. Force starting.");
-            finishLoading();
-        }
-    }, 4000);
-
-    if (totalAssets === 0) {
-        finishLoading();
-        return;
-    }
-
-    ALL_ASSETS.forEach(filename => {
-        const img = new Image();
-        
-        // 1. Define the listener FIRST
-        img.onload = () => {
-            assetsLoaded++;
-            updateLoader(assetsLoaded, totalAssets, bar, txt);
-        };
-
-        img.onerror = () => {
-            console.log("Failed to load: " + filename);
-            assetsLoaded++; // Count it anyway so we don't hang
-            updateLoader(assetsLoaded, totalAssets, bar, txt);
-        };
-
-        // 2. Request the image SECOND
-        img.src = IMAGES + filename;
-    });
-}
-
-function updateLoader(current, total, bar, txt) {
-    const percent = Math.floor((current / total) * 100);
-    if (bar) bar.style.width = percent + "%";
-    if (txt) txt.innerText = `Loading Assets... ${percent}%`;
-
-    if (current >= total) {
-        setTimeout(finishLoading, 500);
-    }
-}
-
-function finishLoading() {
-    const screen = document.getElementById('loading-screen');
-    if (screen) {
-        screen.style.opacity = '0';
-        setTimeout(() => {
-            screen.classList.add('hidden');
-        }, 1000);
-    }
-}
-
-// Start immediately
-window.onload = preloadGame;
 
 
 // ==========================================
@@ -117,6 +42,79 @@ const SKILL_POOL = [
     { id: "disarm", name: "Stealthy Shinobi", costPoints: 3, limit: 3, img: "ninja/stealthy_shinobi.png", effect: "disarm", desc: "Disarms an Attack (0 Dmg) and removes it." },
     { id: "supref", name: "Reflection Torture", costPoints: 3, limit: 2, img: "og/reflection_torture.png", effect: "supref", desc: "Reflects DOUBLE the damage back." }
 ];
+
+// ==========================================
+// SECTION 1.5: ASSET PRELOADER (Fail-Safe)
+// ==========================================
+
+// 1. Setup the Asset List
+const PRELOAD_LIST = [
+    "cardbacks/cardback.png",
+    "animations/cardani/stallion.gif"
+];
+
+// 2. Safely add Game Images (Only if decks exist)
+if (typeof BASE_DECK !== 'undefined') {
+    BASE_DECK.forEach(c => { if(c.img) PRELOAD_LIST.push(c.img); });
+}
+if (typeof SKILL_POOL !== 'undefined') {
+    SKILL_POOL.forEach(s => { if(s.img) PRELOAD_LIST.push(s.img); });
+}
+
+// 3. The Loading Logic
+function startPreloader() {
+    const bar = document.getElementById('loading-bar');
+    const txt = document.getElementById('loading-text');
+    const screen = document.getElementById('loading-screen');
+    
+    // SAFETY: If HTML elements are missing, just play the game.
+    if (!bar || !screen) return;
+
+    let loaded = 0;
+    let total = PRELOAD_LIST.length;
+
+    // FORCE START: If stuck for 3 seconds, kill the screen.
+    setTimeout(() => {
+        if (screen.style.opacity !== '0') {
+            console.log("Loader stuck. Force starting.");
+            finishLoading();
+        }
+    }, 3000);
+
+    function checkProgress() {
+        loaded++;
+        let percent = Math.floor((loaded / total) * 100);
+        bar.style.width = percent + "%";
+        if (txt) txt.innerText = `Loading... ${percent}%`;
+        
+        if (loaded >= total) {
+            setTimeout(finishLoading, 500);
+        }
+    }
+
+    if (total === 0) finishLoading();
+
+    PRELOAD_LIST.forEach(file => {
+        const img = new Image();
+        img.onload = checkProgress;
+        img.onerror = checkProgress; // Count errors as progress so we don't hang
+        img.src = "images/" + file;  // Ensure path is correct
+    });
+}
+
+function finishLoading() {
+    const screen = document.getElementById('loading-screen');
+    if (screen) {
+        screen.style.opacity = '0';
+        setTimeout(() => {
+            screen.classList.add('hidden'); // Remove from flow
+        }, 1000);
+    }
+}
+
+// 4. Trigger the loader when the page is ready
+window.addEventListener('load', startPreloader);
+
 
 // ==========================================
 // SECTION 2: GLOBAL STATE
