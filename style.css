@@ -1,0 +1,433 @@
+/* ==========================================
+   SECTION 1: GLOBAL VARIABLES & RESET
+   TROUBLESHOOTING: If colors are wrong or the layout scrolls weirdly, check here.
+   ========================================== */
+:root { 
+    --accent: #f1c40f; 
+    --bg: #121212; 
+    --board-bg: #1e1e1e;
+    --card-h: 16vh;
+    --card-w: 14.5vh; 
+    --slot-h: 16.5vh;
+    --slot-w: 15.5vh; 
+}
+
+body { 
+    background: var(--bg); color: white; 
+    font-family: 'Segoe UI', sans-serif; margin: 0; 
+    height: 100vh; overflow: hidden; 
+    display: flex; flex-direction: column;
+}
+
+.hidden { display: none !important; }
+
+/* ==========================================
+   SECTION 2: START SCREEN
+   TROUBLESHOOTING: If the start menu background or buttons are misaligned.
+   ========================================== */
+#start-screen {
+    position: fixed; top: 0; left: 0;
+    width: 100%; height: 100%; z-index: 5000;
+    background: url('images/start/devil_king_start.png') no-repeat center top;
+    background-size: cover; background-color: #000;
+    display: flex; justify-content: center;
+}
+
+.start-buttons {
+    position: absolute; bottom: 25%;
+    display: flex; flex-direction: column; gap: 15px; width: 180px;
+}
+
+.btn-start {
+    font-family: 'Times New Roman', serif; padding: 12px;
+    font-size: 16px; letter-spacing: 2px; font-weight: bold;
+    background: rgba(44, 62, 80, 0.85); border: none;
+    color: #bdc3c7; text-shadow: 0 0 5px rgba(0,0,0,0.8);
+    box-shadow: 0 0 15px rgba(139, 0, 0, 0.6); 
+    cursor: pointer; transition: all 0.3s ease; text-transform: uppercase;
+}
+
+.btn-start:hover {
+    background: rgba(0, 0, 0, 0.95); color: #fff;
+    box-shadow: 0 0 25px rgba(255, 0, 0, 0.8); transform: scale(1.05);
+}
+
+#multiplayer-menu {
+    margin-top: 20px;
+    padding: 15px;
+    background: rgba(0,0,0,0.6);
+    border: 1px solid var(--accent);
+    border-radius: 8px;
+}
+#room-code {
+    padding: 8px;
+    font-size: 1.2rem;
+    text-align: center;
+    width: 60%;
+    margin-bottom: 10px;
+    background: #222;
+    color: white;
+    border: 1px solid #555;
+}
+.multi-buttons {
+    display: flex;
+    gap: 10px;
+    justify-content: center;
+}
+.status-text {
+    color: #ffd700;
+    font-size: 0.9rem;
+    min-height: 20px;
+}
+
+
+/* ==========================================
+   SECTION 3: SKILLS BUILDER (SHOP)
+   TROUBLESHOOTING: Layout issues in the "Choose Your Skills" menu.
+   ========================================== */
+#skills-overlay {
+    position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+    background: rgba(0,0,0,0.95); z-index: 5500;
+    display: flex; justify-content: center; align-items: center;
+}
+
+.skills-container {
+    width: 90%; height: 90%; background: #222; border: 2px solid #444;
+    display: flex; flex-direction: column; padding: 20px; box-sizing: border-box;
+    border-radius: 10px; box-shadow: 0 0 30px rgba(0,0,0,0.8);
+}
+
+.skills-header { text-align: center; border-bottom: 2px solid #444; padding-bottom: 10px; margin-bottom: 15px; }
+.skills-header h2 { margin: 0; color: white; letter-spacing: 2px; }
+
+.builder-layout { display: flex; gap: 20px; flex-grow: 1; overflow: hidden; }
+
+/* Left Side: Shop Grid */
+.card-shop { flex: 1; overflow-y: auto; border-right: 1px solid #444; padding-right: 10px; display: flex; flex-direction: column; }
+.points-bar {
+    font-size: 28px; font-weight: 900; color: var(--accent); margin-bottom: 15px; text-align: center;
+    background: #111; padding: 15px; border-radius: 5px; border: 1px solid #333; letter-spacing: 2px;
+}
+.shop-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(90px, 1fr)); gap: 15px; justify-items: center; padding-bottom: 20px; }
+.shop-card-wrapper { text-align: center; width: 100px; }
+.shop-card {
+    width: 100px; height: 140px; background-size: contain; background-repeat: no-repeat; background-position: center;
+    border-radius: 5px; cursor: pointer; border: 2px solid transparent; transition: transform 0.1s;
+}
+.shop-card:hover { transform: scale(1.05); filter: drop-shadow(0 0 5px white); }
+
+.shop-controls { display: flex; justify-content: center; align-items: center; gap: 10px; margin-top: 5px; }
+.btn-qty {
+    background: #444; color: white; border: 1px solid #666; width: 24px; height: 24px;
+    cursor: pointer; border-radius: 4px; display: flex; align-items: center; justify-content: center;
+}
+.btn-qty:hover { background: var(--accent); color: black; }
+.qty-val { font-size: 16px; font-weight: bold; width: 20px; text-align: center; }
+
+/* Right Side: Preview & Deck */
+.deck-info-panel { flex: 1; display: flex; flex-direction: column; gap: 20px; }
+.card-preview {
+    background: #111; padding: 20px; border-radius: 8px; border: 1px solid #333;
+    text-align: center; display: flex; flex-direction: column; justify-content: center; min-height: 100px;
+}
+.preview-text h4 { margin: 0 0 10px 0; color: var(--accent); font-size: 18px; text-transform: uppercase; border-bottom: 1px solid #444; padding-bottom: 5px; }
+.preview-text p { font-size: 16px; color: #ccc; margin: 10px 0; line-height: 1.5; }
+
+.current-deck { flex-grow: 1; background: #111; padding: 10px; overflow-y: auto; border-radius: 8px; border: 1px solid #333; }
+.current-deck h3 { margin-top: 0; font-size: 14px; color: #888; border-bottom: 1px solid #444; padding-bottom: 5px; }
+#deck-list { list-style: none; padding: 0; margin: 0; }
+#deck-list li { display: flex; justify-content: space-between; padding: 8px; border-bottom: 1px solid #333; font-size: 13px; }
+
+.skills-footer { margin-top: 15px; display: flex; justify-content: center; border-top: 2px solid #444; padding-top: 15px; }
+.btn-confirm {
+    padding: 10px 40px; font-size: 16px; font-weight: bold;
+    background: var(--accent); color: black; border: none; border-radius: 5px;
+    cursor: pointer; box-shadow: 0 0 10px rgba(241, 196, 15, 0.3);
+}
+.btn-confirm:hover { background: white; transform: scale(1.05); }
+
+/* ==========================================
+   SECTION 4: GAME UI (TOP BAR, MENUS, LOGS)
+   TROUBLESHOOTING: Problems with the pause menu, logs, or overlays.
+   ========================================== */
+#top-bar {
+    height: 35px; background: #000; border-bottom: 1px solid #333;
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 0 15px; flex-shrink: 0;
+}
+.game-title { font-weight: bold; color: var(--accent); letter-spacing: 2px; font-size: 14px; }
+#btn-menu { font-size: 12px; padding: 4px 8px; background: #333; border: 1px solid #555; color: #ccc; cursor: pointer; }
+
+#menu-overlay {
+    position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+    background: rgba(0,0,0,0.85); z-index: 100;
+    display: flex; justify-content: center; align-items: center; backdrop-filter: blur(5px);
+}
+#menu-box {
+    background: #222; border: 2px solid var(--accent); padding: 20px; width: 85%; max-width: 400px;
+    border-radius: 10px; text-align: center; display: flex; flex-direction: column; gap: 15px;
+}
+.menu-buttons { display: flex; flex-direction: column; gap: 10px; }
+.menu-buttons button { padding: 12px; font-size: 16px; width: 100%; }
+.btn-danger { background: #c0392b !important; border-color: #e74c3c !important; }
+
+#log-wrapper {
+    border: 1px solid #444; border-radius: 5px; overflow: hidden;
+    background: #000; text-align: left; margin-top: 10px;
+}
+#log-header {
+    background: #333; padding: 10px; cursor: pointer;
+    font-weight: bold; font-size: 14px; color: var(--accent);
+    display: flex; justify-content: space-between;
+}
+#log-content { max-height: 150px; overflow-y: auto; transition: max-height 0.3s ease-in-out; }
+#log-content.collapsed { max-height: 0; }
+#game-log { list-style: none; padding: 5px; margin: 0; font-family: monospace; font-size: 12px; }
+#game-log li { margin-bottom: 4px; border-bottom: 1px solid #222; }
+.log-p { color: #2ecc71; } .log-ai { color: #e74c3c; } .log-dmg { color: #e67e22; font-weight: bold; }
+
+/* Deck View */
+#deck-view-overlay {
+    position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+    background: rgba(0,0,0,0.95); z-index: 200; display: flex; justify-content: center; align-items: center;
+}
+#deck-box {
+    width: 90%; height: 80%; background: #1a1a1a; border: 2px solid #555; border-radius: 10px;
+    display: flex; flex-direction: column; padding: 15px;
+}
+.deck-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+.deck-legend { font-size: 12px; color: #888; text-align: center; margin-bottom: 10px; }
+#deck-grid {
+    flex-grow: 1; overflow-y: auto; display: grid; grid-template-columns: repeat(auto-fill, minmax(80px, 1fr));
+    gap: 10px; padding: 5px;
+}
+.deck-card { aspect-ratio: 2.5/3.5; background-size: contain; background-repeat: no-repeat; border-radius: 5px; position: relative; }
+
+/* RESTORED STYLE RULE FOR DARKENING CARDS */
+.deck-card.drawn { filter: grayscale(100%) brightness(30%); opacity: 0.6; }
+
+
+/* ==========================================
+   SECTION 5: GAME BOARD & ZONES
+   TROUBLESHOOTING: If cards are misaligned or the board looks broken.
+   ========================================== */
+#game-container {
+    flex-grow: 1; display: flex; flex-direction: column; justify-content: center;
+    padding: 5px; max-width: 800px; margin: 0 auto; width: 100%; gap: 5px;
+}
+#ai-zone, #player-zone {
+    display: flex; align-items: center; justify-content: space-between;
+    height: 18vh; padding: 0 10px;
+}
+#ai-hand, #hand { display: flex; gap: 5px; justify-content: center; align-items: center; flex-grow: 1; }
+
+.hp-box {
+    width: 55px; height: 55px; display: flex; flex-direction: column;
+    justify-content: center; align-items: center; border-radius: 8px; border: 2px solid #444;
+    font-weight: bold; flex-shrink: 0; margin: 0 5px; background: #111;
+}
+.ai-hp { border-color: #e74c3c; color: #e74c3c; } .p-hp { border-color: #2ecc71; color: #2ecc71; }
+.hp-label { font-size: 9px; opacity: 0.7; } .hp-val { font-size: 22px; }
+
+#game-board { 
+    background: var(--board-bg); border: 3px solid #333; border-radius: 12px;
+    padding: 5px; display: flex; flex-direction: column; gap: 5px;
+    justify-content: center; flex-shrink: 0; box-shadow: inset 0 0 20px rgba(0,0,0,0.5);
+}
+.row { display: flex; justify-content: center; gap: 10px; }
+.slot { 
+    width: var(--slot-w); height: var(--slot-h);
+    border: 2px dashed #444; border-radius: 8px; 
+    display: flex; align-items: center; justify-content: center;
+    background: rgba(0,0,0,0.2);
+}
+.slot.highlight { border-color: var(--accent); background: rgba(241, 196, 15, 0.1); }
+
+#controls { text-align: center; height: 8vh; display: flex; flex-direction: column; justify-content: center; }
+#selection-preview { color: var(--accent); font-weight: bold; height: 18px; font-size: 14px; margin-bottom: 2px; }
+.btn-group { display: flex; gap: 10px; justify-content: center; }
+button { 
+    padding: 8px 16px; background: #333; color: white; border: 1px solid #555; 
+    border-radius: 4px; font-weight: bold; cursor: pointer; font-size: 12px;
+}
+button:hover { background: #444; border-color: #777; }
+button:disabled { opacity: 0.3; cursor: default; }
+
+/* ==========================================
+   SECTION 6: CARDS & ANIMATIONS
+   TROUBLESHOOTING: If animations (flying cards, flashes) are broken.
+   ========================================== */
+.card { 
+    width: var(--card-w); height: var(--card-h); 
+    background-size: 100% 100%; background-repeat: no-repeat; background-position: center; 
+    border-radius: 8px; cursor: pointer; transition: transform 0.2s;
+    filter: drop-shadow(0 4px 6px rgba(0,0,0,0.6));
+}
+.card.selected { transform: translateY(-15px) scale(1.1); filter: drop-shadow(0 0 8px var(--accent)); z-index: 10; }
+.card.skill-dark { filter: brightness(0.5); }
+
+/* DRAW & FLIP ANIMATIONS */
+@keyframes hand-enter {
+    0% { transform: translateX(120vw) rotate(30deg); opacity: 0; }
+    70% { transform: translateX(-10px) rotate(-5deg); opacity: 1; }
+    100% { transform: translateX(0) rotate(0); }
+}
+.anim-entry { animation: hand-enter 0.6s cubic-bezier(0.2, 0.8, 0.2, 1) forwards; }
+
+@keyframes reveal-flip {
+    0% { transform: scaleX(-1); background-color: #000; }
+    50% { transform: scaleX(0); background-color: #fff; }
+    100% { transform: scaleX(1); }
+}
+.anim-flip-in { animation: reveal-flip 0.4s ease-out forwards; }
+
+/* FLYING CARD (Standard Play) */
+.flying-card {
+    position: fixed; z-index: 1000; pointer-events: none;
+    transition: all 0.4s cubic-bezier(0.25, 1, 0.5, 1);
+    box-shadow: 0 10px 20px rgba(0,0,0,0.5);
+}
+
+/* GIF OVERLAY */
+#video-overlay {
+    position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;
+    background: transparent; z-index: 9999;
+    display: flex; justify-content: center; align-items: center; pointer-events: none; 
+}
+#game-gif { width: 100vw; object-fit: cover; filter: drop-shadow(0 0 20px rgba(255, 255, 255, 0.5)); }
+
+/* KEYFRAMES */
+@keyframes slash-enter { from { transform: translateX(100%) skewX(-10deg); opacity: 0; } to { transform: translateX(0) skewX(0); opacity: 1; } }
+@keyframes fade-exit { from { opacity: 1; transform: scale(1); } to { opacity: 0; transform: scale(1.1); } }
+.vid-enter { animation: slash-enter 0.3s cubic-bezier(0.1, 0.7, 1.0, 0.1) forwards; }
+.vid-exit { animation: fade-exit 0.5s ease-out forwards; }
+
+@keyframes flash-hit {
+    0% { transform: translate(0, 0); background-color: rgba(255, 255, 255, 0); }
+    10% { transform: translate(-5px, 0); background-color: rgba(255, 255, 255, 0.8); box-shadow: 0 0 15px white; }
+    50% { transform: translate(-5px, 0); background-color: transparent; }
+    100% { transform: translate(0, 0); }
+}
+@keyframes flash-block {
+    0% { border-color: #444; } 50% { box-shadow: inset 0 0 30px #3498db; border-color: #3498db; } 100% { border-color: #444; }
+}
+@keyframes flash-super {
+    0% { background-color: transparent; } 20% { background-color: white; } 60% { background-color: rgba(231, 76, 60, 0.8); } 100% { background-color: transparent; }
+}
+.anim-hit { animation: flash-hit 0.4s ease-out; }
+.anim-block { animation: flash-block 0.5s ease-out; }
+.anim-super { animation: flash-super 0.6s ease-in-out; }
+
+/* DEATH ANIMATIONS */
+@keyframes shake-crumble { 50% { filter: grayscale(1); opacity: 0.5; } 100% { transform: scale(0); opacity: 0; } }
+@keyframes burn-red { 50% { filter: brightness(0.5) sepia(1) hue-rotate(-50deg) saturate(5); } 100% { transform: scale(0); opacity: 0; } }
+@keyframes holy-fade { 50% { filter: brightness(20); } 100% { opacity: 0; transform: scale(1.5); } }
+.destroy-std { animation: shake-crumble 0.6s forwards; }
+.destroy-fire { animation: burn-red 0.8s forwards; }
+.destroy-holy { animation: holy-fade 0.8s ease-out forwards; }
+
+/* ==========================================
+   SECTION 7: DEV MENU
+   TROUBLESHOOTING: Styles for the hidden developer testing box.
+   ========================================== */
+#dev-overlay {
+    position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+    background: rgba(0,0,0,0.95); z-index: 6000;
+    display: flex; justify-content: center; align-items: center;
+}
+#dev-box {
+    background: #222; border: 2px solid var(--accent); padding: 20px; width: 90%; max-width: 500px;
+    border-radius: 10px; text-align: center; color: white;
+}
+.dev-stage { display: flex; justify-content: center; margin: 20px 0; padding: 20px; background: #333; border-radius: 8px; border: 1px dashed #555; }
+.dev-controls { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; text-align: left; }
+.dev-controls h3 { grid-column: span 3; border-bottom: 1px solid #555; margin-bottom: 5px; margin-top: 15px; color: var(--accent); font-size: 14px; }
+.dev-controls button { padding: 8px; font-size: 11px; }
+
+/* ==========================================
+   SECTION 8: GAME OVER SCREEN
+   ========================================== */
+#game-over-screen {
+    position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+    background: rgba(0,0,0,0.95); z-index: 7000;
+    display: flex; justify-content: center; align-items: center;
+}
+
+.game-over-box {
+    background: #1a1a1a; border: 2px solid var(--accent);
+    padding: 20px; width: 95%; max-width: 500px; /* Wider for more data */
+    border-radius: 10px; text-align: center; color: white;
+    box-shadow: 0 0 50px rgba(0,0,0,0.8);
+    max-height: 90vh; overflow-y: auto; /* Scroll if screen too small */
+}
+
+#go-title {
+    font-size: 28px; letter-spacing: 4px; margin-top: 0;
+    text-transform: uppercase; border-bottom: 2px solid #333;
+    padding-bottom: 10px; margin-bottom: 15px;
+}
+
+/* 2-Column Grid Layout */
+.stats-grid {
+    display: flex; flex-direction: column; gap: 4px; margin-bottom: 20px;
+}
+
+.grid-header {
+    display: grid; grid-template-columns: 2fr 1fr 1fr;
+    font-weight: bold; color: #888; font-size: 11px; letter-spacing: 1px;
+    padding-bottom: 5px; border-bottom: 1px solid #444; margin-bottom: 5px;
+}
+
+.grid-row {
+    display: grid; grid-template-columns: 2fr 1fr 1fr;
+    font-size: 13px; /* Slightly smaller to fit rows */
+    align-items: center;
+    background: rgba(255,255,255,0.03); padding: 6px 5px; border-radius: 4px;
+}
+
+.label { text-align: left; color: #ccc; }
+.pts-plus { color: var(--accent); font-weight: bold; }
+.pts-minus { color: #e74c3c; font-weight: bold; }
+
+.score-box {
+    background: #000; padding: 15px; border-radius: 8px;
+    border: 1px solid #444; margin-bottom: 20px;
+}
+
+.score-label { font-size: 12px; color: #888; letter-spacing: 1px; }
+#final-score { font-size: 42px; font-weight: bold; color: white; text-shadow: 0 0 15px var(--accent); }
+
+/* ==========================================
+   SECTION 9: TUTORIAL & RULES UI
+   ========================================== */
+#rules-menu {
+    position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+    background: rgba(0,0,0,0.85); z-index: 5200;
+    display: flex; justify-content: center; align-items: center;
+}
+
+#tutorial-overlay {
+    position: fixed; top: 15%; left: 0; width: 100%;
+    display: flex; justify-content: center;
+    z-index: 8000; pointer-events: none; /* Let clicks pass through around the box */
+}
+
+.tutorial-box {
+    background: rgba(0, 0, 0, 0.9);
+    border: 2px solid var(--accent);
+    padding: 20px; width: 80%; max-width: 500px;
+    border-radius: 10px; text-align: center;
+    pointer-events: auto; /* Re-enable clicks on the box */
+    box-shadow: 0 0 20px rgba(241, 196, 15, 0.5);
+    animation: slide-down 0.5s ease-out;
+}
+
+@keyframes slide-down { from { transform: translateY(-50px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+
+#tut-text { font-size: 16px; color: white; margin-bottom: 15px; line-height: 1.4; }
+#tut-btn {
+    background: var(--accent); color: black; border: none;
+    padding: 8px 20px; font-weight: bold; cursor: pointer;
+    animation: pulse-btn 2s infinite;
+}
+@keyframes pulse-btn { 0% { box-shadow: 0 0 0 0 rgba(241, 196, 15, 0.7); } 70% { box-shadow: 0 0 0 10px rgba(241, 196, 15, 0); } 100% { box-shadow: 0 0 0 0 rgba(241, 196, 15, 0); } }
