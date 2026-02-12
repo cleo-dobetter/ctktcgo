@@ -14,16 +14,20 @@ const firebaseConfig = {
   measurementId: "G-RJRW0Q80E6"
 };
 
+// Initialize Firebase (Compat Mode)
 if (!firebase.apps.length) {
     firebase.initializeApp(firebaseConfig);
 }
 const db = firebase.database();
 const auth = firebase.auth();
+
 console.log("Firebase Connected!", db);
 
+
 // ==========================================
-// SECTION 1: GAME CONFIGURATION
+// SECTION 1: GAME CONFIGURATION (STATIC DATA)
 // ==========================================
+
 const BASE_DECK = [
     { name: "Blazing Colt", type: "atk", val: 10, cost: 1, img: "horse/blazing_colt.png", count: 3 },
     { name: "Blazing Pegasus", type: "atk", val: 15, cost: 2, img: "horse/blazing_pegasus.png", count: 2 },
@@ -42,15 +46,17 @@ const SKILL_POOL = [
 ];
 
 // ==========================================
-// SECTION 2: GLOBAL STATE
+// SECTION 2: GLOBAL STATE (MEMORY)
 // ==========================================
-let gameMode = 'solo'; 
-let myRole = null;     
-let playerRole = null; 
+
+// --- Multiplayer State ---
+let gameMode = 'solo'; // 'solo' or 'multi'
+let myRole = null;     // 'host' or 'guest' (Active role)
+let playerRole = null; // 'host' or 'guest' (Lobby choice)
 let currentRoomId = null;
 let roomRef = null;
-let isMyTurn = true; // NEW: Controls who can click
 
+// --- Game State ---
 let playerSkills = {}; 
 let currentPoints = 0;
 const MAX_POINTS = 15;
@@ -62,6 +68,7 @@ let actions = 0, discarded = false, selectedIdx = null, sacrifices = [];
 let isProcessing = false;
 let isTutorial = false;
 
+// --- Stats Tracking ---
 let stats = {
     atkDmgGiven: 0, atkDmgTaken: 0,
     skillDmgGiven: 0, skillDmgTaken: 0,
@@ -78,8 +85,9 @@ function loadDefaultSkills() {
 }
 
 // ==========================================
-// SECTION 3: MENU & UI
+// SECTION 3: MENU & UI NAVIGATION
 // ==========================================
+
 function startGame() {
     isTutorial = false;
     document.getElementById('start-screen').classList.add('hidden');
@@ -93,7 +101,11 @@ function openRules() { document.getElementById('rules-menu').classList.remove('h
 function closeRulesMenu() { document.getElementById('rules-menu').classList.add('hidden'); }
 
 function quitToTitle() {
-    location.reload(); // Simple reset for now
+    document.getElementById('game-container').classList.add('hidden');
+    document.getElementById('top-bar').classList.add('hidden');
+    document.getElementById('menu-overlay').classList.add('hidden');
+    document.getElementById('game-over-screen').classList.add('hidden');
+    document.getElementById('start-screen').classList.remove('hidden');
 }
 
 function openSkills() {
@@ -103,6 +115,7 @@ function openSkills() {
 }
 function closeSkills() { document.getElementById('skills-overlay').classList.add('hidden'); }
 
+// --- SKILL BUILDER LOGIC ---
 function calcPoints() {
     currentPoints = 0;
     SKILL_POOL.forEach(skill => {
@@ -173,6 +186,7 @@ function updateBuilderUI() {
     const list = document.getElementById('deck-list');
     list.innerHTML = '';
     let totalCards = 0;
+    
     SKILL_POOL.forEach(skill => {
         let qty = playerSkills[skill.id] || 0;
         if(qty > 0) {
@@ -186,29 +200,32 @@ function updateBuilderUI() {
 }
 
 // ==========================================
-// SECTION 4: INIT
+// SECTION 4: GAME INITIALIZATION
 // ==========================================
+
 async function init() {
+    // 1. Setup My Deck
     pDeck = [];
     BASE_DECK.forEach(card => { for(let i=0; i<card.count; i++) pDeck.push({...card}); });
+    // Add Skills
     SKILL_POOL.forEach(skill => {
         let qty = playerSkills[skill.id] || 0;
         for(let i=0; i<qty; i++) {
             pDeck.push({ name: skill.name, type: "skl", val: 0, cost: 0, img: skill.img, effect: skill.effect, count: 1 });
         }
     });
-    pDeck.sort(() => Math.random() - 0.5); 
+    
+    pDeck.sort(() => Math.random() - 0.5); // Shuffle My Deck
 
+    // 2. Setup Opponent Deck
     if (gameMode === 'solo') {
         aiDeck = createAIDeck();
         aiDeck.sort(() => Math.random() - 0.5);
-        isMyTurn = true; 
     } else {
-        aiDeck = []; 
-        // In multiplayer, Host goes first
-        isMyTurn = (myRole === 'host');
+        aiDeck = []; // Multiplayer: wait for network
     }
 
+    // 3. Reset Board
     pHP = 60; aiHP = 60; turnCount = 1;
     pField = [null, null, null]; aiField = [null, null, null];
     pHand = []; aiHand = [];
@@ -220,12 +237,15 @@ async function init() {
         startTime: Date.now(), endTime: 0 
     };
 
+    // 4. Draw Initial Hand (Me Only)
     for(let i=0; i<3; i++) {
         let card = pDeck.shift();
         if(card) pHand.push(card);
     }
 
+    // 5. The Fork (Solo vs Multi)
     if (gameMode === 'solo') {
+        // AI Draws immediately
         for(let i=0; i<3; i++) {
             let card = aiDeck.shift();
             aiHand.push(card);
@@ -233,6 +253,7 @@ async function init() {
         render();
         addToLog("Duel started!", "sys");
     } else {
+        // Multiplayer: Handshake
         await performMultiplayerHandshake();
     }
 }
@@ -275,25 +296,19 @@ async function drawCardAnimated(deck, hand, isPlayer) {
 }
 
 // ==========================================
-// SECTION 5: RENDER LOOP
+// SECTION 5: RENDER LOOP (VISUALS)
 // ==========================================
+
 function render() {
     document.getElementById('p-hp').innerText = pHP;
     document.getElementById('ai-hp').innerText = aiHP;
     
-    const disabledState = (isProcessing || !isMyTurn); // BLOCK CLICKS IF NOT MY TURN
+    const disabledState = (isProcessing);
     document.getElementById('btn-discard').disabled = (discarded || selectedIdx === null || disabledState);
     document.getElementById('btn-end').disabled = disabledState;
 
-    // UPDATE STATUS TEXT
-    if (gameMode === 'multi') {
-        const preview = document.getElementById('selection-preview');
-        if (!isMyTurn) preview.innerText = "OPPONENT'S TURN";
-        else if (selectedIdx === null) preview.innerText = "YOUR TURN";
-    }
-
     const preview = document.getElementById('selection-preview');
-    if (selectedIdx !== null) preview.innerText = pHand[selectedIdx].name.toUpperCase();
+    if (preview) preview.innerText = selectedIdx !== null ? pHand[selectedIdx].name.toUpperCase() : "CHOOSE A CARD";
 
     // AI HAND
     const aiHandDiv = document.getElementById('ai-hand');
@@ -328,7 +343,7 @@ function render() {
 
         div.className = classes;
         div.dataset.index = i; 
-        if (!isProcessing && isMyTurn) { // ONLY CLICK IF MY TURN
+        if (!isProcessing) {
             div.onclick = () => { 
                 selectedIdx = i; 
                 sacrifices = []; 
@@ -363,7 +378,7 @@ function renderField(id, card, col, owner) {
         }
         if (owner === 'p' && card.type === 'skl') div.classList.add('skill-dark');
 
-        if(owner === 'p' && !isProcessing && isMyTurn) {
+        if(owner === 'p' && !isProcessing) {
             div.onclick = (e) => { 
                 e.stopPropagation(); 
                 if (card.type === 'skl' && !isSacTarget && selectedIdx === null) {
@@ -376,7 +391,7 @@ function renderField(id, card, col, owner) {
         slot.appendChild(div);
     } 
 
-    if (selectedIdx !== null && owner === 'p' && !isProcessing && isMyTurn) {
+    if (selectedIdx !== null && owner === 'p' && !isProcessing) {
         const costNeeded = getCost();
         const cardToPlay = pHand[selectedIdx];
         const isSlotAvailable = (pField[col] === null || sacrifices.includes(col));
@@ -389,8 +404,9 @@ function renderField(id, card, col, owner) {
 }
 
 // ==========================================
-// SECTION 6: INTERACTIONS
+// SECTION 6: PLAYER INTERACTIONS
 // ==========================================
+
 function payLifeToRemove(col) {
     if (pHP <= 5) { alert("Not enough HP!"); return; }
     if (confirm("Pay 5 HP to remove this Skill card?")) {
@@ -398,10 +414,6 @@ function payLifeToRemove(col) {
         pField[col] = null;
         pHP -= 5;
         addToLog(`Player paid 5 HP to remove ${c.name}`, "p");
-        
-        // Broadcast Removal
-        if (gameMode === 'multi') sendMultiplayerMove('removeSkill', { slot: col });
-        
         render();
     }
 }
@@ -428,6 +440,7 @@ function toggleSac(col) {
 
 async function clickSlot(col) {
     if (isTutorial) { tutorialClickSlot(col); return; } 
+    
     if (isProcessing || selectedIdx === null || actions >= 2) return;
     
     const cardToPlay = pHand[selectedIdx];
@@ -441,16 +454,6 @@ async function clickSlot(col) {
         }
 
         isProcessing = true; 
-        
-        // *** MULTIPLAYER BROADCAST ***
-        if (gameMode === 'multi') {
-            sendMultiplayerMove('play', { 
-                cardIndex: selectedIdx, 
-                slot: col,
-                sacrifices: sacrifices
-            });
-        }
-
         const handDiv = document.getElementById('hand');
         const cardElem = Array.from(handDiv.children).find(el => el.dataset.index == selectedIdx);
         const slotElem = document.getElementById(`p-${col}`);
@@ -476,11 +479,6 @@ function discardCard() {
     if (isTutorial) { tutorialDiscard(); return; } 
 
     if (selectedIdx !== null && !discarded && !isProcessing) {
-        // *** MULTIPLAYER BROADCAST ***
-        if (gameMode === 'multi') {
-            sendMultiplayerMove('discard', { cardIndex: selectedIdx });
-        }
-
         let c = pHand.splice(selectedIdx, 1)[0];
         addToLog(`Player discarded ${c.name}`, "p");
         selectedIdx = null; discarded = true; render();
@@ -490,6 +488,7 @@ function discardCard() {
 // ==========================================
 // SECTION 7: ANIMATIONS
 // ==========================================
+
 function flyCard(startElem, endElem) {
     return new Promise(resolve => {
         const startRect = startElem.getBoundingClientRect();
@@ -571,31 +570,110 @@ function animateDeath(slotId, cardName) {
 }
 
 // ==========================================
-// SECTION 8: LOGIC ROUTER
+// SECTION 8: COMBAT & AI LOGIC
 // ==========================================
 
-async function aiAction() {
-    // FORK: If Solo, run AI. If Multi, do nothing (wait for listener).
-    if (gameMode === 'solo') {
-        await runSoloAI();
-    } else {
-        addToLog("Waiting for opponent...", "sys");
+async function resolveCombat(offField, defField, isAiAtk) {
+    let attackerName = isAiAtk ? "AI" : "Player";
+    let defenderName = isAiAtk ? "Player" : "AI";
+    let atkPrefix = isAiAtk ? 'ai' : 'p';
+    let defPrefix = isAiAtk ? 'p' : 'ai';
+
+    for (let i = 0; i < 3; i++) {
+        let atk = offField[i];
+        if (!atk || atk.charging) continue;
+
+        const atkSlotId = `${atkPrefix}-${i}`;
+        const defSlotId = `${defPrefix}-${i}`;
+
+        // 1. CASTLE BREAKER
+        if (atk.type === 'skl' && atk.effect === 'breakd') {
+            let def = defField[i];
+            if (def && def.type === 'def') {
+                atk.revealed = true; render(); await sleep(400);
+                addToLog(`${attackerName} used Castle Breaker!`, isAiAtk ? "ai" : "p");
+                flashSlot(defSlotId, 'hit');
+                await animateDeath(defSlotId, def.name);
+                defField[i] = null; 
+                offField[i] = null; 
+            }
+        }
+        // 2. ATTACK
+        else if (atk.type === 'atk') {
+            let dmg = atk.val;
+            let def = defField[i];
+            
+            if (def) {
+                if (def.type === 'skl') {
+                    def.revealed = true; render(); await sleep(600);
+                    addToLog(`${defenderName}'s ${def.name} triggered!`, isAiAtk ? "p" : "ai");
+                    
+                    if (def.effect === 'disarm') {
+                        offField[i] = null; dmg = 0; 
+                        flashSlot(atkSlotId, 'block'); 
+                    } 
+                    else if (def.effect === 'reflect') {
+                        if (isAiAtk) { stats.skillDmgGiven += dmg; aiHP -= dmg; } 
+                        else { stats.skillDmgTaken += dmg; pHP -= dmg; }
+                        addToLog(`Reflected ${dmg} dmg to ${attackerName}`, "dmg"); 
+                        dmg = 0; flashSlot(atkSlotId, 'hit'); 
+                    } 
+                    else if (def.effect === 'supref') {
+                        let refDmg = dmg * 2; 
+                        if (isAiAtk) { stats.skillDmgGiven += refDmg; aiHP -= refDmg; } 
+                        else { stats.skillDmgTaken += refDmg; pHP -= refDmg; }
+                        addToLog(`Super Reflected ${refDmg} dmg to ${attackerName}!`, "dmg"); 
+                        dmg = 0; flashSlot(atkSlotId, 'super'); 
+                    } 
+                    else if (def.effect === 'miss') {
+                        addToLog(`Attack Missed!`, "sys"); dmg = 0;
+                    }
+                    await animateDeath(defSlotId, def.name);
+                    defField[i] = null; 
+                } 
+                else if (def.type === 'def') {
+                    if (def.val > dmg) {
+                        let thorns = def.val - dmg; 
+                        if (isAiAtk) { stats.defDmgGiven += thorns; aiHP -= thorns; } 
+                        else { stats.defDmgTaken += thorns; pHP -= thorns; }
+                        addToLog(`Thorn Damage! ${attackerName} took ${thorns}`, "dmg");
+                        flashSlot(defSlotId, 'block'); flashSlot(atkSlotId, 'hit');   
+                    }
+                    else {
+                         flashSlot(defSlotId, dmg===def.val ? 'block' : 'hit'); 
+                    }
+                    dmg = Math.max(0, dmg - def.val);
+                }
+            } else {
+                if (atk.name === "Angelic Stallion") await playGifAnimation("stallion.gif");
+                flashSlot(defSlotId, 'hit');
+            }
+
+            if (dmg > 0) {
+                if (isAiAtk) { stats.atkDmgTaken += dmg; pHP -= dmg; } 
+                else { stats.atkDmgGiven += dmg; aiHP -= dmg; }
+                addToLog(`${attackerName} dealt ${dmg} dmg with ${atk.name}`, "dmg");
+            }
+            await sleep(300); 
+        }
     }
 }
 
-// --- STANDARD AI (SOLO MODE) ---
-async function runSoloAI() {
+async function aiAction() {
     if (aiHP > 15) {
         for(let i=0; i<3; i++) {
             let c = aiField[i];
             if (!c || c.type !== 'skl') continue;
             let opp = pField[i];
             let isDead = false;
+            
             if (['reflect','supref','miss','disarm'].includes(c.effect)) {
                 if (!opp || opp.type !== 'atk') isDead = true;
-            } else if (c.effect === 'breakd') {
+            }
+            else if (c.effect === 'breakd') {
                 if (!opp || opp.type !== 'def') isDead = true;
             }
+            
             if (isDead) {
                 aiHP -= 5;
                 await animateDeath(`ai-${i}`, c.name);
@@ -625,6 +703,7 @@ async function runSoloAI() {
                         let opp = pField[slot];
                         if (opp && opp.type === 'atk') continue; 
                     }
+                    
                     let move = { card: card, handIdx: hIdx, slot: slot, sacrifices: sacIndices, score: 0 };
                     move.score = evaluateMove(move);
                     possibleMoves.push(move);
@@ -643,8 +722,10 @@ async function runSoloAI() {
         if (cardElem && slotElem) await flyCard(cardElem, slotElem);
 
         best.sacrifices.forEach(idx => aiField[idx] = null);
+        
         let newCard = {...best.card, charging: (best.card.type === 'atk')};
         if(newCard.type === 'skl') newCard.revealed = false; 
+        
         aiField[best.slot] = newCard;
         aiHand.splice(best.handIdx, 1);
         return;
@@ -661,7 +742,6 @@ async function runSoloAI() {
     }
 }
 
-// --- HELPER SCORING FUNCTIONS ---
 function evaluateMove(move) {
     let score = 0;
     let oppCard = pField[move.slot];
@@ -695,6 +775,7 @@ function evaluateMove(move) {
              if (card.val > oppCard.val) score += 100; else score -= 200; 
         }
     }
+
     let sacValue = 0;
     move.sacrifices.forEach(idx => { sacValue += getCardValue(aiField[idx]); });
     if (score < 800) { score -= sacValue; }
@@ -705,8 +786,14 @@ function getDiscardPriority(card) {
     if (card.effect === 'miss') return 80;
     if (card.effect === 'breakd') return 70;
     if (card.effect === 'reflect') return 60;
+    if (card.effect === 'supref') return 50;
+    if (card.effect === 'disarm') return 40;
+    if (card.val === 20) return 30; 
+    if (card.val === 15) return 20;
+    if (card.val === 10) return 10; 
     return 0;
 }
+
 function getCardValue(card) {
     if (!card) return 0;
     if (card.type === 'atk') return card.val;
@@ -715,79 +802,8 @@ function getCardValue(card) {
 }
 
 // ==========================================
-// SECTION 9: UTILS & GAME OVER
+// SECTION 9: UTILITIES & SYSTEM
 // ==========================================
-async function resolveCombat(offField, defField, isAiAtk) {
-    let attackerName = isAiAtk ? "AI" : "Player";
-    let defenderName = isAiAtk ? "Player" : "AI";
-    let atkPrefix = isAiAtk ? 'ai' : 'p';
-    let defPrefix = isAiAtk ? 'p' : 'ai';
-
-    for (let i = 0; i < 3; i++) {
-        let atk = offField[i];
-        if (!atk || atk.charging) continue;
-
-        const atkSlotId = `${atkPrefix}-${i}`;
-        const defSlotId = `${defPrefix}-${i}`;
-
-        if (atk.type === 'skl' && atk.effect === 'breakd') {
-            let def = defField[i];
-            if (def && def.type === 'def') {
-                atk.revealed = true; render(); await sleep(400);
-                addToLog(`${attackerName} used Castle Breaker!`, isAiAtk ? "ai" : "p");
-                flashSlot(defSlotId, 'hit');
-                await animateDeath(defSlotId, def.name);
-                defField[i] = null; offField[i] = null; 
-            }
-        }
-        else if (atk.type === 'atk') {
-            let dmg = atk.val;
-            let def = defField[i];
-            
-            if (def) {
-                if (def.type === 'skl') {
-                    def.revealed = true; render(); await sleep(600);
-                    addToLog(`${defenderName}'s ${def.name} triggered!`, isAiAtk ? "p" : "ai");
-                    
-                    if (def.effect === 'disarm') { offField[i] = null; dmg = 0; flashSlot(atkSlotId, 'block'); } 
-                    else if (def.effect === 'reflect') {
-                        if (isAiAtk) { stats.skillDmgGiven += dmg; aiHP -= dmg; } 
-                        else { stats.skillDmgTaken += dmg; pHP -= dmg; }
-                        dmg = 0; flashSlot(atkSlotId, 'hit'); 
-                    } 
-                    else if (def.effect === 'supref') {
-                        let refDmg = dmg * 2; 
-                        if (isAiAtk) { stats.skillDmgGiven += refDmg; aiHP -= refDmg; } 
-                        else { stats.skillDmgTaken += refDmg; pHP -= refDmg; }
-                        dmg = 0; flashSlot(atkSlotId, 'super'); 
-                    } 
-                    else if (def.effect === 'miss') { dmg = 0; }
-                    await animateDeath(defSlotId, def.name);
-                    defField[i] = null; 
-                } 
-                else if (def.type === 'def') {
-                    if (def.val > dmg) {
-                        let thorns = def.val - dmg; 
-                        if (isAiAtk) { stats.defDmgGiven += thorns; aiHP -= thorns; } 
-                        else { stats.defDmgTaken += thorns; pHP -= thorns; }
-                        flashSlot(defSlotId, 'block'); flashSlot(atkSlotId, 'hit');   
-                    } else { flashSlot(defSlotId, dmg===def.val ? 'block' : 'hit'); }
-                    dmg = Math.max(0, dmg - def.val);
-                }
-            } else {
-                if (atk.name === "Angelic Stallion") await playGifAnimation("stallion.gif");
-                flashSlot(defSlotId, 'hit');
-            }
-
-            if (dmg > 0) {
-                if (isAiAtk) { stats.atkDmgTaken += dmg; pHP -= dmg; } 
-                else { stats.atkDmgGiven += dmg; aiHP -= dmg; }
-                addToLog(`${attackerName} dealt ${dmg} dmg with ${atk.name}`, "dmg");
-            }
-            await sleep(300); 
-        }
-    }
-}
 
 function checkGameOver(reason = "") {
     if (aiHP <= 0 || pHP <= 0 || reason) {
@@ -803,20 +819,84 @@ function showGameOverScreen(isWin, reason) {
     const screen = document.getElementById('game-over-screen');
     const title = document.getElementById('go-title');
     
-    // Simple Score Calc
-    let score = isWin ? 1000 : 0;
+    // Time Calc
+    let totalSeconds = Math.floor((stats.endTime - stats.startTime) / 1000);
+    let mins = Math.floor(totalSeconds / 60);
+    let secs = totalSeconds % 60;
+    let timeString = `${mins}:${secs < 10 ? '0'+secs : secs}`;
+
+    // Points Calc
+    let score = 0;
+    let timeBonus = 0;
+    let ptsCards = pDeck.length * 10;
+    let ptsAtkGiven = stats.atkDmgGiven * 10;
+    let ptsAtkTaken = stats.atkDmgTaken * 10;
+    let ptsSkillUsed = stats.skillsUsed * 10;
+    let ptsSkillGiven = stats.skillDmgGiven * 10;
+    let ptsSkillTaken = stats.skillDmgTaken * 10;
+    let ptsDefGiven = stats.defDmgGiven * 10;
+    let ptsDefTaken = stats.defDmgTaken * 10;
+    let ptsSac = stats.sacrifices * 10;
+
     if (isWin) {
         title.innerText = "VICTORY";
         title.style.color = "var(--accent)";
+        
+        if (totalSeconds < 60) timeBonus = 100;
+        else if (totalSeconds > 300) timeBonus = 10;
+        else timeBonus = 100 - Math.floor((totalSeconds - 60) * (90 / 240));
+
+        let totalGiven = ptsAtkGiven + ptsSkillGiven + ptsDefGiven;
+        let totalTaken = ptsAtkTaken + ptsSkillTaken + ptsDefTaken;
+        
+        score = (totalGiven - totalTaken) + ptsCards + ptsSkillUsed + ptsSac + timeBonus;
+        score = Math.max(0, score); 
     } else {
         title.innerText = "DEFEAT";
         title.style.color = "#e74c3c";
+        score = 10; 
+        timeBonus = 0;
     }
+
+    // UPDATE DOM
+    document.getElementById('val-cards').innerText = pDeck.length;
+    document.getElementById('val-atk-given').innerText = stats.atkDmgGiven;
+    document.getElementById('val-atk-taken').innerText = stats.atkDmgTaken;
+    document.getElementById('val-skl-used').innerText = stats.skillsUsed;
+    document.getElementById('val-skl-given').innerText = stats.skillDmgGiven;
+    document.getElementById('val-skl-taken').innerText = stats.skillDmgTaken;
+    document.getElementById('val-def-given').innerText = stats.defDmgGiven;
+    document.getElementById('val-def-taken').innerText = stats.defDmgTaken;
+    document.getElementById('val-sac').innerText = stats.sacrifices;
+    document.getElementById('val-time').innerText = timeString;
+    
+    // Points Column
+    if (isWin) {
+        document.getElementById('pts-cards').innerText = `+${ptsCards}`;
+        document.getElementById('pts-atk-given').innerText = `+${ptsAtkGiven}`;
+        document.getElementById('pts-atk-taken').innerText = `-${ptsAtkTaken}`;
+        document.getElementById('pts-skl-used').innerText = `+${ptsSkillUsed}`;
+        document.getElementById('pts-skl-given').innerText = `+${ptsSkillGiven}`;
+        document.getElementById('pts-skl-taken').innerText = `-${ptsSkillTaken}`;
+        document.getElementById('pts-def-given').innerText = `+${ptsDefGiven}`;
+        document.getElementById('pts-def-taken').innerText = `-${ptsDefTaken}`;
+        document.getElementById('pts-sac').innerText = `+${ptsSac}`;
+        document.getElementById('pts-time').innerText = `+${timeBonus}`;
+    } else {
+        let elements = document.getElementsByClassName('pts-plus');
+        for(let el of elements) el.innerText = "+0";
+        elements = document.getElementsByClassName('pts-minus');
+        for(let el of elements) el.innerText = "-0";
+    }
+    
     document.getElementById('final-score').innerText = score;
     screen.classList.remove('hidden');
 }
 
-function quitToTitleFromStats() { location.reload(); }
+function quitToTitleFromStats() {
+    document.getElementById('game-over-screen').classList.add('hidden');
+    quitToTitle();
+}
 
 function concedeGame() {
     if (confirm("Are you sure you want to surrender?")) {
@@ -828,16 +908,6 @@ function concedeGame() {
 async function endTurn() {
     if (isTutorial) { tutorialEndTurn(); return; } 
 
-    // *** MULTIPLAYER ***
-    if (gameMode === 'multi') {
-        sendMultiplayerMove('endTurn', {});
-        isMyTurn = false; // Stop Player from clicking
-        render();
-        // Wait for opponent to send "End Turn" back
-        return;
-    }
-
-    // *** SOLO MODE ***
     isProcessing = true;
     render(); 
     
@@ -884,37 +954,47 @@ function addToLog(msg, type = "sys") {
     li.innerText = msg;
     li.className = `log-${type}`;
     ul.appendChild(li);
-    // Auto-scroll
-    const container = document.getElementById('log-content');
-    if(container) container.scrollTop = container.scrollHeight;
 }
 
 function sleep(ms) { return new Promise(resolve => setTimeout(resolve, ms)); }
+
 function toggleMenu() { document.getElementById('menu-overlay').classList.toggle('hidden'); }
 function toggleBattleLog() {
     const content = document.getElementById('log-content');
-    if (content.classList.contains('collapsed')) content.classList.remove('collapsed'); 
-    else content.classList.add('collapsed'); 
+    const arrow = document.getElementById('log-arrow');
+    if (content.classList.contains('collapsed')) { content.classList.remove('collapsed'); arrow.innerText = '▼'; } 
+    else { content.classList.add('collapsed'); arrow.innerText = '▶'; }
 }
 
 function openDeckView() {
     const overlay = document.getElementById('deck-view-overlay');
     const grid = document.getElementById('deck-grid');
     grid.innerHTML = '';
+    
     let fullDeckList = [];
     BASE_DECK.forEach(card => { for(let i=0; i<card.count; i++) fullDeckList.push({...card}); });
     SKILL_POOL.forEach(skill => {
         let qty = playerSkills[skill.id] || 0;
         for(let i=0; i<qty; i++) fullDeckList.push({name: skill.name, img: skill.img});
     });
+    
+    let drawPileChecklist = pDeck.map(c => c.name);
+    
     fullDeckList.forEach(cardData => {
         const div = document.createElement('div');
         div.className = 'deck-card';
         div.style.backgroundImage = `url('${IMAGES}${cardData.img}')`;
+        const foundIdx = drawPileChecklist.indexOf(cardData.name);
+        if (foundIdx !== -1) {
+            drawPileChecklist.splice(foundIdx, 1);
+        } else {
+            div.classList.add('drawn');
+        }
         grid.appendChild(div);
     });
     overlay.classList.remove('hidden');
 }
+
 function closeDeckView() { document.getElementById('deck-view-overlay').classList.add('hidden'); }
 function openDevMenu() { document.getElementById('dev-overlay').classList.remove('hidden'); }
 function closeDevMenu() { document.getElementById('dev-overlay').classList.add('hidden'); }
@@ -935,16 +1015,23 @@ function testDevDeath(animClass) {
 }
 
 // ==========================================
-// SECTION 10: MULTIPLAYER NETWORKING
+// SECTION 10: MULTIPLAYER LOBBY
 // ==========================================
 
 async function performMultiplayerHandshake() {
     roomRef = db.ref('rooms/' + currentRoomId);
     addToLog("Waiting for opponent...", "sys");
 
-    const myData = { hand: pHand, deck: pDeck, hp: pHP };
+    // 1. Upload MY Hand & Deck
+    const myData = {
+        hand: pHand,
+        deck: pDeck,
+        hp: pHP
+    };
+    
     await roomRef.child(myRole).update(myData);
 
+    // 2. Listen for OPPONENT'S Hand & Deck
     const oppRole = (myRole === 'host') ? 'guest' : 'host';
     
     roomRef.child(oppRole).on('value', (snapshot) => {
@@ -956,126 +1043,26 @@ async function performMultiplayerHandshake() {
             
             addToLog("Opponent Connected!", "sys");
             render();
-            roomRef.child(oppRole).off(); // Stop Handshake listener
-            startMultiplayerListener();   // START GAMEPLAY LISTENER
+            
+            // Unsubscribe handshake listener
+            roomRef.child(oppRole).off();
         }
     });
-}
-
-function startMultiplayerListener() {
-    const oppRole = (myRole === 'host') ? 'guest' : 'host';
-    const movePath = (oppRole === 'host') ? 'hostMove' : 'guestMove';
-
-    // LISTEN FOR OPPONENT MOVES
-    roomRef.child(movePath).on('value', async (snapshot) => {
-        const move = snapshot.val();
-        if (!move) return;
-
-        // Check if new move
-        const lastTime = window.lastMoveTime || 0;
-        if (move.timestamp <= lastTime) return;
-        window.lastMoveTime = move.timestamp;
-
-        if (move.type === 'play') {
-            // MIRROR THE MOVE
-            const cardIdx = move.data.cardIndex;
-            const slot = move.data.slot;
-            const sacs = move.data.sacrifices || [];
-
-            // 1. Process Sacrifices (Visuals only, no logic check needed)
-            sacs.forEach(sIdx => {
-                // Opponent sacrificed their own card (which is in aiField for me)
-                aiField[sIdx] = null; 
-            });
-
-            // 2. Animate Card from Hand
-            const handDiv = document.getElementById('ai-hand');
-            const cardElem = Array.from(handDiv.children).find(el => el.dataset.aiIndex == cardIdx);
-            const slotElem = document.getElementById(`ai-${slot}`);
-            
-            if (cardElem && slotElem) await flyCard(cardElem, slotElem);
-
-            // 3. Move Data
-            let card = aiHand.splice(cardIdx, 1)[0];
-            card.charging = (card.type === 'atk'); // Reset charge
-            if(card.type === 'skl') card.revealed = false; // Hide skills
-            aiField[slot] = card;
-            
-            render();
-        } 
-        else if (move.type === 'discard') {
-            const cardIdx = move.data.cardIndex;
-            let card = aiHand.splice(cardIdx, 1)[0];
-            addToLog(`Opponent discarded ${card.name}`, "ai");
-            render();
-        }
-        else if (move.type === 'removeSkill') {
-            const slot = move.data.slot;
-            aiField[slot] = null;
-            aiHP -= 5;
-            addToLog("Opponent paid 5 HP to remove skill", "ai");
-            render();
-        }
-        else if (move.type === 'endTurn') {
-            // OPPONENT ENDED TURN -> MY TURN STARTS
-            addToLog("Opponent ended turn.", "sys");
-            
-            // 1. Resolve Combat (My Field vs Their Field)
-            // Note: In Multi, we run this locally. 
-            // Both players run this function at the start of their own turn.
-            
-            addToLog("--- Combat Phase ---", "sys");
-            // Resolve My Field attacking AI Field (Wait... flipped?)
-            // If opponent ended turn, it means *they* just attacked *me*.
-            // So we resolve AI Field attacking Player Field.
-            await resolveCombat(aiField, pField, true);
-            
-            // 2. Start My Turn
-            isMyTurn = true;
-            actions = 0; discarded = false; turnCount++;
-            
-            // 3. Draw Cards
-            while(pHand.length < 3) {
-                if (pDeck.length === 0) { checkGameOver("DEFEAT! Decked Out."); return; }
-                await drawCardAnimated(pDeck, pHand, true);
-            }
-             // 4. Fill Opponent Hand (Visuals)
-            while(aiHand.length < 3) {
-                 if (aiDeck.length === 0) { checkGameOver("VICTORY! AI Decked Out."); return; }
-                 await drawCardAnimated(aiDeck, aiHand, false);
-            }
-            
-            // 5. Reset Charge
-            pField.forEach(c => { if(c) c.charging = false; });
-            aiField.forEach(c => { if(c) c.charging = false; });
-
-            render();
-        }
-    });
-}
-
-function sendMultiplayerMove(actionType, data) {
-    if (gameMode !== 'multi') return;
-
-    const moveData = {
-        type: actionType,
-        data: data,
-        timestamp: Date.now()
-    };
-    const movePath = (myRole === 'host') ? 'hostMove' : 'guestMove';
-    roomRef.child(movePath).set(moveData);
 }
 
 function createRoom() {
     const code = Math.floor(1000 + Math.random() * 9000).toString();
     currentRoomId = code;
     playerRole = 'host';
+    
     document.getElementById('room-code').value = code;
-    document.getElementById('lobby-status').innerText = "Creating room...";
+    document.getElementById('lobby-status').innerText = "Creating room... waiting for opponent...";
     
     db.ref('rooms/' + code).set({
         host: { status: 'waiting' },
-        guest: { status: 'empty' }
+        guest: { status: 'empty' },
+        turn: 'host', 
+        lastMove: null
     }).then(() => {
         db.ref('rooms/' + code + '/guest/status').on('value', (snapshot) => {
             if (snapshot.val() === 'joined') {
@@ -1083,23 +1070,28 @@ function createRoom() {
                 setTimeout(() => startMultiplayerGame(), 1000);
             }
         });
+    }).catch((err) => {
+        alert("Firebase Error: " + err.message);
     });
 }
 
 function joinRoom() {
     const code = document.getElementById('room-code').value;
-    if (code.length !== 4) { alert("Enter 4-digit code."); return; }
+    if (code.length !== 4) { alert("Please enter a 4-digit code."); return; }
+    
     currentRoomId = code;
     playerRole = 'guest';
-    document.getElementById('lobby-status').innerText = "Joining...";
+    
+    document.getElementById('lobby-status').innerText = "Joining room...";
     
     db.ref('rooms/' + code).once('value', (snapshot) => {
         if (snapshot.exists()) {
             db.ref('rooms/' + code + '/guest').update({ status: 'joined' });
-            document.getElementById('lobby-status').innerText = "Joined! Starting...";
+            document.getElementById('lobby-status').innerText = "Joined! Starting game...";
             setTimeout(() => startMultiplayerGame(), 1000);
         } else {
             alert("Room not found!");
+            document.getElementById('lobby-status').innerText = "";
         }
     });
 }
@@ -1107,9 +1099,27 @@ function joinRoom() {
 function startMultiplayerGame() {
     gameMode = 'multi';
     myRole = playerRole; 
+    
     document.getElementById('start-screen').classList.add('hidden');
     document.getElementById('game-container').classList.remove('hidden');
     document.getElementById('top-bar').classList.remove('hidden');
     document.getElementById('btn-menu').style.display = 'block';
+
     init(); 
 }
+
+function sendMultiplayerMove(actionType, data) {
+    if (gameMode !== 'multi') return;
+
+    // Upload my move to the database
+    const moveData = {
+        type: actionType, // 'play', 'discard', 'endTurn'
+        data: data,       // { cardIndex: 0, slot: 1 }
+        timestamp: Date.now()
+    };
+
+    // If I am Host, I write to 'hostMove'. If Guest, 'guestMove'.
+    const movePath = (myRole === 'host') ? 'hostMove' : 'guestMove';
+    roomRef.child(movePath).set(moveData);
+}
+
