@@ -296,12 +296,40 @@ button:disabled { opacity: 0.3; cursor: default; }
    SECTION 6: CARDS & ANIMATIONS
    TROUBLESHOOTING: If animations (flying cards, flashes) are broken.
    ========================================== */
-.card { 
-    width: var(--card-w); height: var(--card-h); 
+
+.card {
+    /* Existing styles... */
+    border: none !important;      /* Force remove borders */
+    outline: none !important;     /* Force remove outlines */
+    box-shadow: none;             /* Remove default shadows */
+    background-color: transparent; /* Fix white background flash */
+	width: var(--card-w); height: var(--card-h); 
     background-size: 100% 100%; background-repeat: no-repeat; background-position: center; 
     border-radius: 8px; cursor: pointer; transition: transform 0.2s;
     filter: drop-shadow(0 4px 6px rgba(0,0,0,0.6));
+    
+    /* Ensure image fills the div perfectly */
+    background-size: 100% 100%;
+    background-position: center;
+    background-repeat: no-repeat;
+    
+    /* Make sure clicks work */
+    cursor: pointer;
 }
+
+/* Fix the Slot container too */
+.slot {
+    border: 1px solid rgba(255, 255, 255, 0.1); /* Subtle guide only */
+    background: rgba(0, 0, 0, 0.2);
+    overflow: hidden; /* Clips any weird overflowing content */
+}
+
+/* When highlighted, use a glow instead of a border to look cleaner */
+.slot.highlight {
+    border: 1px solid #ffd700;
+    box-shadow: 0 0 10px #ffd700;
+}
+
 .card.selected { transform: translateY(-15px) scale(1.1); filter: drop-shadow(0 0 8px var(--accent)); z-index: 10; }
 .card.skill-dark { filter: brightness(0.5); }
 

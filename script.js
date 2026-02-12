@@ -443,62 +443,55 @@ function renderField(id, card, col, owner) {
     const slot = document.getElementById(id);
     if (!slot) return;
     
-    slot.classList.remove('highlight'); // Always reset highlight
+    // 1. CLEAR THE SLOT COMPLETELY (Fixes ghosting/disappearing)
+    slot.innerHTML = '';
+    slot.classList.remove('highlight'); 
     
-    // Check if there is already a card div inside this slot
-    let div = slot.firstElementChild;
-
-    // CASE 1: Slot is empty in data
+    // 2. IF EMPTY, HANDLE HIGHLIGHTS ONLY
     if (!card) {
-        if (div) div.remove(); // Remove div if it shouldn't be there
-        
-        // Handle Slot Highlight for Player (Empty slot is playable)
         if (selectedIdx !== null && owner === 'p' && !isProcessing && isMyTurn) {
              const cost = getCost();
-             const isSacReady = (sacrifices.includes(col) || pField[col]===null); 
-             // Note: since card is null, pField[col] is null.
-             
-             // Check Lane Rules
              const cardToPlay = pHand[selectedIdx];
+             const isSacReady = (sacrifices.includes(col)); 
              const laneFree = !(cardToPlay.type === 'atk' && aiField[col] && aiField[col].type === 'atk');
 
              if (sacrifices.length === cost && laneFree) {
-                 slot.classList.add('highlight');
+                 slot.classList.add('highlight'); // Visual hint: "Play Here"
              }
         }
         return;
     }
 
-    // CASE 2: Slot has a card (Create or Update div)
-    if (!div) {
-        div = document.createElement('div');
-        slot.appendChild(div);
-    }
-
-    // Smart Style Update
-    let bgUrl = `url('${IMAGES}${card.img}')`;
-    if (owner === 'ai' && card.type === 'skl' && !card.revealed) {
-        bgUrl = `url('${IMAGES}cardbacks/cardback.png')`;
-    }
+    // 3. IF CARD EXISTS, CREATE IT FRESH
+    const div = document.createElement('div');
     
-    if (div.style.backgroundImage !== bgUrl) {
-        div.style.backgroundImage = bgUrl;
+    // Fix Invisible Border: Ensure background covers everything
+    div.style.backgroundSize = "cover"; 
+    div.style.backgroundRepeat = "no-repeat";
+    
+    // Determine Image
+    if (owner === 'ai' && card.type === 'skl' && !card.revealed) {
+        div.style.backgroundImage = `url('${IMAGES}cardbacks/cardback.png')`;
+    } else {
+        div.style.backgroundImage = `url('${IMAGES}${card.img}')`;
     }
 
-    // Classes
-    const isSacTarget = sacrifices.includes(col);
-    let cls = `card`;
+    // Apply Classes
+    let cls = 'card';
     if (card.charging) cls += ' charging';
+    
+    const isSacTarget = sacrifices.includes(col);
     if (isSacTarget) cls += ' sac-target';
+    
     if (owner === 'p' && card.type === 'skl') cls += ' skill-dark';
+    
+    div.className = cls;
 
-    if (div.className !== cls) div.className = cls;
-
-    // Events
+    // Add Click Listeners
     if (owner === 'p' && !isProcessing && isMyTurn) {
         div.onclick = (e) => { 
             e.stopPropagation(); 
-            // Remove Skill Logic
+            // Remove Skill
             if (card.type === 'skl' && !isSacTarget && selectedIdx === null) {
                 payLifeToRemove(col); return;
             }
@@ -506,17 +499,11 @@ function renderField(id, card, col, owner) {
             if (isSacTarget && sacrifices.length === getCost()) clickSlot(col);
             else toggleSac(col); 
         };
-    } else {
-        div.onclick = null;
     }
 
-    // Highlight Logic (If sacrificing this specific card)
-    if (selectedIdx !== null && owner === 'p' && !isProcessing && isMyTurn) {
-        if (isSacTarget && sacrifices.length === getCost()) {
-            slot.classList.add('highlight');
-        }
-    }
+    slot.appendChild(div);
 }
+
 
 
 // ==========================================
