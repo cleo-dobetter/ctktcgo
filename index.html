@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Trivia Rack$ - Card Battle</title>
+    <title>Crown the King - Card Battle</title>
     <link rel="stylesheet" href="style.css">
     
     <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
@@ -16,51 +16,40 @@
         <div id="loading-container">
             <div id="loading-bar"></div>
         </div>
-        <p id="loading-text">Loading Assets... 0%</p>
+        <p id="loading-text">Loading CTK...</p>
     </div>
 
     <div id="start-screen">
-        <h1>TRIVIA RACK$</h1>
+        <h1>CROWN THE KING</h1>
         <div class="menu-buttons">
-            <button onclick="startGame()">SOLO MATCH</button>
+            <button onclick="window.startGame()">MATCH</button>
             <button onclick="document.getElementById('lobby-overlay').classList.remove('hidden')">MULTIPLAYER</button>
-            <button onclick="startTutorial()">TUTORIAL</button>
-            <button onclick="openSkills()">SKILLS & DECK</button>
-            <button onclick="openRules()">HOW TO PLAY</button>
+            <button onclick="window.startTutorial()">TUTORIAL</button>
+            <button onclick="window.openSkills()">SKILLS & DECK</button>
+            <button onclick="window.openRules()">RULES</button>
         </div>
     </div>
 
     <div id="lobby-overlay" class="hidden overlay">
         <div class="modal">
-            <h2>MULTIPLAYER LOBBY</h2>
+            <h2>LOBBY</h2>
             <input type="text" id="room-code" placeholder="4-Digit Code" maxlength="4">
             <div class="lobby-btns">
-                <button onclick="createRoom()">CREATE ROOM</button>
-                <button onclick="joinRoom()">JOIN ROOM</button>
+                <button onclick="window.createRoom()">CREATE</button>
+                <button onclick="window.joinRoom()">JOIN</button>
             </div>
             <p id="lobby-status"></p>
-            <button class="btn-close" onclick="document.getElementById('lobby-overlay').classList.add('hidden')">BACK</button>
-        </div>
-    </div>
-
-    <div id="tutorial-overlay" class="hidden">
-        <div class="tutorial-box">
-            <span id="tutorial-text">Welcome to Trivia Rack$!</span>
-            <div class="tut-btns">
-                <button onclick="nextTutorialStep()">NEXT</button>
-                <button onclick="closeTutorial()" style="background:#ff4444">EXIT</button>
-            </div>
+            <button onclick="document.getElementById('lobby-overlay').classList.add('hidden')">BACK</button>
         </div>
     </div>
 
     <div id="top-bar" class="hidden">
-        <div class="stat-box">AI HP: <span id="ai-hp">60</span></div>
-        <button id="btn-menu" onclick="toggleMenu()">MENU</button>
-        <div class="stat-box">MY HP: <span id="p-hp">60</span></div>
+        <div>AI HP: <span id="ai-hp">60</span></div>
+        <button onclick="window.toggleMenu()">MENU</button>
+        <div>MY HP: <span id="p-hp">60</span></div>
     </div>
 
     <div id="game-container" class="hidden">
-        
         <div id="ai-hand" class="hand-area"></div>
         <div id="ai-field" class="field">
             <div class="slot" id="ai-0"></div>
@@ -71,39 +60,38 @@
         <ul id="game-log"></ul>
 
         <div id="p-field" class="field">
-            <div class="slot" id="p-0" onclick="clickSlot(0)"></div>
-            <div class="slot" id="p-1" onclick="clickSlot(1)"></div>
-            <div class="slot" id="p-2" onclick="clickSlot(2)"></div>
+            <div class="slot" id="p-0" onclick="window.clickSlot(0)"></div>
+            <div class="slot" id="p-1" onclick="window.clickSlot(1)"></div>
+            <div class="slot" id="p-2" onclick="window.clickSlot(2)"></div>
         </div>
         <div id="hand" class="hand-area"></div>
 
         <div id="controls">
-            <button id="btn-discard" onclick="discardCard()" disabled>DISCARD</button>
-            <button id="btn-end" onclick="endTurn()" disabled>END TURN</button>
+            <button id="btn-discard" onclick="window.discardCard()" disabled>DISCARD</button>
+            <button id="btn-end" onclick="window.endTurn()" disabled>END TURN</button>
+        </div>
+    </div>
+
+    <div id="tutorial-overlay" class="hidden">
+        <div class="tutorial-box">
+            <p id="tutorial-text"></p>
+            <button onclick="window.nextTutorialStep()">NEXT</button>
+            <button onclick="window.closeTutorial()">EXIT</button>
         </div>
     </div>
 
     <div id="rules-menu" class="hidden overlay">
-        <div class="modal scrollable">
-            <h2>HOW TO PLAY</h2>
-            <p>1. Attack cards take one turn to charge.</p>
-            <p>2. Skills are face-down traps.</p>
-            <p>3. Sacrifice on-field cards to pay for higher costs.</p>
-            <button onclick="closeRulesMenu()">CLOSE</button>
+        <div class="modal">
+            <h2>RULES</h2>
+            <p>Charge horses. Set traps. Sacrifice to win.</p>
+            <button onclick="window.closeRulesMenu()">CLOSE</button>
         </div>
     </div>
 
     <div id="menu-overlay" class="hidden overlay">
         <div class="modal">
-            <button onclick="toggleMenu()">RESUME</button>
-            <button onclick="location.reload()">QUIT TO TITLE</button>
-        </div>
-    </div>
-
-    <div id="game-over-screen" class="hidden overlay">
-        <div class="modal">
-            <h2 id="game-over-msg">GAME OVER</h2>
-            <button onclick="location.reload()">PLAY AGAIN</button>
+            <button onclick="window.toggleMenu()">RESUME</button>
+            <button onclick="location.reload()">QUIT</button>
         </div>
     </div>
 
