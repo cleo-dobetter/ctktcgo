@@ -264,3 +264,51 @@ async function clickSlot(col) {
         render();
     }
 }
+
+// --- HELPER: Prevents the "Blink" by syncing DOM instead of nuking it ---
+function syncHandDOM(containerId, cardList, isPlayer) {
+    const container = document.getElementById(containerId);
+    if (!container) return;
+
+    if (container.children.length !== cardList.length) {
+        container.innerHTML = '';
+    }
+
+    cardList.forEach((c, i) => {
+        let div = container.children[i];
+        if (!div) {
+            div = document.createElement('div');
+            container.appendChild(div);
+        }
+
+        let bgUrl = `url('${IMAGES}cardbacks/cardback.png')`;
+        if (isPlayer || c.revealed) bgUrl = `url('${IMAGES}${c.img}')`;
+        
+        if (div.style.backgroundImage !== bgUrl) {
+            div.style.backgroundImage = bgUrl;
+            div.style.backgroundSize = "cover";
+        }
+
+        let cls = 'card';
+        if (isPlayer && selectedIdx === i) cls += ' selected';
+        if (c.animState === 'entering') cls += ' anim-entry';
+        
+        if (div.className !== cls) div.className = cls;
+        div.dataset.index = i;
+
+        if (isPlayer && !isProcessing && isMyTurn) {
+            div.onclick = () => { selectedIdx = i; sacrifices = []; render(); };
+        } else {
+            div.onclick = null;
+        }
+    });
+}
+
+// --- HELPER: Visual Flash for Combat ---
+function flashSlot(slotId, type) {
+    const slot = document.getElementById(slotId);
+    if (!slot) return;
+    slot.classList.remove('anim-hit', 'anim-block', 'anim-super');
+    void slot.offsetWidth; // Trigger reflow
+    if (type === 'hit') slot.classList.add('anim-hit');
+}
