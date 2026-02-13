@@ -1,42 +1,26 @@
-async function runSoloAI() {
-    // 1. Skill Cleanup (Only if AI has health)
-    if (aiHP > 15) {
-        for(let i=0; i<3; i++) {
-            let c = aiField[i];
-            if (c && c.type === 'skl') {
-                // Simplified cleanup check
-                aiHP -= 5;
-                await animateDeath(`ai-${i}`, c.name);
-                aiField[i] = null;
+// ==========================================
+// js/ai.js - AI Logic
+// ==========================================
+window.runSoloAI = async function() {
+    isProcessing = true;
+    
+    // AI looks for the first empty slot and plays a card
+    let played = false;
+    for (let hIdx = 0; hIdx < aiHand.length; hIdx++) {
+        for (let slot = 0; slot < 3; slot++) {
+            if (aiField[slot] === null) {
+                // Logic: Move card from hand to field
+                let card = aiHand.splice(hIdx, 1)[0];
+                card.charging = true;
+                aiField[slot] = card;
+                played = true;
+                break;
             }
         }
+        if (played) break;
     }
     
-    // 2. Simple Scoring
-    let moves = [];
-    aiHand.forEach((card, hIdx) => {
-        for(let slot=0; slot<3; slot++) {
-            if (aiField[slot] === null) {
-                moves.push({ card, hIdx, slot, score: Math.random() * 100 });
-            }
-        }
-    });
-
-    moves.sort((a,b) => b.score - a.score);
-
-    // 3. Execution
-    if (moves.length > 0) {
-        let best = moves[0];
-        isProcessing = true;
-        const cardElem = document.getElementById('ai-hand').children[best.hIdx];
-        const slotElem = document.getElementById(`ai-${best.slot}`);
-        
-        if (cardElem && slotElem) await flyCard(cardElem, slotElem);
-
-        let newCard = {...best.card, charging: (best.card.type === 'atk')};
-        aiField[best.slot] = newCard;
-        aiHand.splice(best.hIdx, 1);
-        isProcessing = false;
-        render();
-    }
-}
+    await new Promise(r => setTimeout(r, 1000)); // Simulate "Thinking"
+    render();
+    isProcessing = false;
+};
