@@ -168,8 +168,32 @@ function openRules() { document.getElementById('rules-menu').classList.remove('h
 function closeRulesMenu() { document.getElementById('rules-menu').classList.add('hidden'); }
 
 function quitToTitle() {
-    location.reload(); // Simple reset for now
+    // 1. KILL FIREBASE LISTENERS (Prevent ghost moves in next game)
+    if (roomRef) {
+        const oppRole = (myRole === 'host') ? 'guest' : 'host';
+        const movePath = (oppRole === 'host') ? 'hostMove' : 'guestMove';
+        roomRef.child(movePath).off(); // Stop listening to moves
+        roomRef.child('host').off();
+        roomRef.child('guest').off();
+    }
+
+    // 2. RESET GLOBAL STATE
+    isProcessing = false;
+    isMyTurn = true;
+    selectedIdx = null;
+    sacrifices = [];
+    currentRoomId = null;
+    gameMode = 'solo'; 
+
+    // 3. UI RESET
+    document.getElementById('game-container').classList.add('hidden');
+    document.getElementById('top-bar').classList.add('hidden');
+    document.getElementById('menu-overlay').classList.add('hidden');
+    document.getElementById('game-over-screen').classList.add('hidden');
+    document.getElementById('start-screen').classList.remove('hidden');
+    document.getElementById('game-log').innerHTML = '';
 }
+
 
 function openSkills() {
     document.getElementById('skills-overlay').classList.remove('hidden');
@@ -264,7 +288,10 @@ function updateBuilderUI() {
 // SECTION 4: GAME INITIALIZATION (UPDATED)
 // ==========================================
 async function init() {
-    isProcessing = true; // Lock UI during startup animation
+    // --- RESET SAFETY ---
+    isProcessing = false; 
+    window.lastMoveTime = 0; // Ensures first network move is accepted
+    document.getElementById('game-log').innerHTML = ''; 
     
     // 1. Setup My Deck
     pDeck = [];
@@ -299,17 +326,15 @@ async function init() {
         startTime: Date.now(), endTime: 0 
     };
 
-    render(); // Draw empty board first
+    render(); // Clear visual board
 
     // 4. ANIMATED INITIAL DRAW
     addToLog("Dealing cards...", "sys");
     
-    // Draw 3 for Player
     for(let i=0; i<3; i++) {
         await drawCardAnimated(pDeck, pHand, true);
     }
 
-    // Draw 3 for Opponent (Solo only)
     if (gameMode === 'solo') {
         for(let i=0; i<3; i++) {
             await drawCardAnimated(aiDeck, aiHand, false);
@@ -322,6 +347,7 @@ async function init() {
         await performMultiplayerHandshake();
     }
 }
+
 
 function createAIDeck() {
     let deck = [];
@@ -1041,52 +1067,38 @@ function startMultiplayerListener() {
         if (move.timestamp <= lastTime) return;
         window.lastMoveTime = move.timestamp;
 
-        if (move.type === 'play') {
+                if (move.type === 'play') {
             const cardIdx = move.data.cardIndex;
             const slot = move.data.slot;
             const sacs = move.data.sacrifices || [];
 
-            isProcessing = true; // Lock UI during opponent move
+            isProcessing = true; // Lock UI during animation
 
-            // 1. Visual Sacrifice (Remove cards being used for cost)
+            // 1. Clear sacrificed cards from opponent's field
             sacs.forEach(sIdx => { aiField[sIdx] = null; });
             render(); 
 
-            // 2. Visual Fly Card (Animate FROM opponent hand TO slot)
+            // 2. GHOST ANIMATION: Find the div in the opponent's hand
             const handDiv = document.getElementById('ai-hand');
-            const cardElem = Array.from(handDiv.children).find(el => el.dataset.aiIndex == cardIdx);
+            // Try to get the specific card, or just any card if the index is weird
+            const cardElem = handDiv.children[cardIdx] || handDiv.lastElementChild;
             const slotElem = document.getElementById(`ai-${slot}`);
             
             if (cardElem && slotElem) {
+                // Wait for the fly animation to finish
                 await flyCard(cardElem, slotElem);
             }
 
-            // 3. Logic Update (Move data after animation finishes)
-            let card = aiHand.splice(cardIdx, 1)[0];
+            // 3. LOGIC UPDATE: Apply to array AFTER animation
+            let card = aiHand.splice(cardIdx, 1)[0] || { name: "Unknown", type: "atk", val: 10, img: "cardbacks/cardback.png" };
             card.charging = true; 
-            if(card.type === 'atk') card.charging = true; 
             if(card.type === 'skl') card.revealed = false; 
             
             aiField[slot] = card;
             isProcessing = false;
             render();
         } 
-        else if (move.type === 'discard') {
-            const cardIdx = move.data.cardIndex;
-            let card = aiHand.splice(cardIdx, 1)[0];
-            addToLog(`Opponent discarded ${card.name}`, "ai");
-            render();
-        }
-        else if (move.type === 'removeSkill') {
-            const slot = move.data.slot;
-            aiField[slot] = null;
-            aiHP -= 5;
-            addToLog("Opponent paid 5 HP to remove skill", "ai");
-            render();
-        }
-        else if (move.type === 'endTurn') {
-            addToLog("Opponent ended turn.", "sys");
-            isProcessing = true;
+
             
             // 1. MY COUNTER-ATTACK!
             addToLog("--- My Counter-Attack ---", "sys");
