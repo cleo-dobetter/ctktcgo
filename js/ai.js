@@ -1,18 +1,16 @@
 // ==========================================
-// js/ai.js - AI Logic
+// js/ai.js - AI Turn Logic
 // ==========================================
 window.runSoloAI = async function() {
-    isProcessing = true;
+    window.isProcessing = true;
     
-    // AI looks for the first empty slot and plays a card
     let played = false;
-    for (let hIdx = 0; hIdx < aiHand.length; hIdx++) {
+    for (let hIdx = 0; hIdx < window.aiHand.length; hIdx++) {
         for (let slot = 0; slot < 3; slot++) {
-            if (aiField[slot] === null) {
-                // Logic: Move card from hand to field
-                let card = aiHand.splice(hIdx, 1)[0];
+            if (window.aiField[slot] === null) {
+                let card = window.aiHand.splice(hIdx, 1)[0];
                 card.charging = true;
-                aiField[slot] = card;
+                window.aiField[slot] = card;
                 played = true;
                 break;
             }
@@ -20,7 +18,7 @@ window.runSoloAI = async function() {
         if (played) break;
     }
     
-    await new Promise(r => setTimeout(r, 1000)); // Simulate "Thinking"
-    render();
-    isProcessing = false;
+    await new Promise(r => setTimeout(r, 800));
+    window.render();
+    window.isProcessing = false;
 };
