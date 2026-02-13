@@ -261,9 +261,12 @@ function updateBuilderUI() {
 }
 
 // ==========================================
-// SECTION 4: INIT
+// SECTION 4: GAME INITIALIZATION (UPDATED)
 // ==========================================
 async function init() {
+    isProcessing = true; // Lock UI during startup animation
+    
+    // 1. Setup My Deck
     pDeck = [];
     BASE_DECK.forEach(card => { for(let i=0; i<card.count; i++) pDeck.push({...card}); });
     SKILL_POOL.forEach(skill => {
@@ -274,16 +277,17 @@ async function init() {
     });
     pDeck.sort(() => Math.random() - 0.5); 
 
+    // 2. Setup Opponent Deck
     if (gameMode === 'solo') {
         aiDeck = createAIDeck();
         aiDeck.sort(() => Math.random() - 0.5);
         isMyTurn = true; 
     } else {
         aiDeck = []; 
-        // In multiplayer, Host goes first
         isMyTurn = (myRole === 'host');
     }
 
+    // 3. Reset Board State
     pHP = 60; aiHP = 60; turnCount = 1;
     pField = [null, null, null]; aiField = [null, null, null];
     pHand = []; aiHand = [];
@@ -295,19 +299,26 @@ async function init() {
         startTime: Date.now(), endTime: 0 
     };
 
+    render(); // Draw empty board first
+
+    // 4. ANIMATED INITIAL DRAW
+    addToLog("Dealing cards...", "sys");
+    
+    // Draw 3 for Player
     for(let i=0; i<3; i++) {
-        let card = pDeck.shift();
-        if(card) pHand.push(card);
+        await drawCardAnimated(pDeck, pHand, true);
     }
 
+    // Draw 3 for Opponent (Solo only)
     if (gameMode === 'solo') {
         for(let i=0; i<3; i++) {
-            let card = aiDeck.shift();
-            aiHand.push(card);
+            await drawCardAnimated(aiDeck, aiHand, false);
         }
+        isProcessing = false;
         render();
         addToLog("Duel started!", "sys");
     } else {
+        isProcessing = false;
         await performMultiplayerHandshake();
     }
 }
@@ -325,29 +336,6 @@ function createAIDeck() {
     return deck;
 }
 
-function drawCard(targetDeck) {
-    if(targetDeck.length === 0) return null;
-    return targetDeck.splice(0, 1)[0];
-}
-
-async function drawCardAnimated(deck, hand, isPlayer) {
-    let card = drawCard(deck);
-    if (!card) return;
-    
-    card.animState = 'entering'; 
-    hand.push(card);
-    render(); 
-    await sleep(400); 
-
-    if (isPlayer) {
-        card.animState = 'flipping';
-        render(); 
-        await sleep(400); 
-    }
-
-    card.animState = null;
-    render();
-}
 
 // ==========================================
 // SECTION 5: RENDER LOOP (SMART UPDATES)
@@ -684,11 +672,9 @@ function animateDeath(slotId, cardName) {
 }
 
 // ==========================================
-// SECTION 8: LOGIC ROUTER
+// SECTION 8: AI LOGIC (UPDATED)
 // ==========================================
-
 async function aiAction() {
-    // FORK: If Solo, run AI. If Multi, do nothing (wait for listener).
     if (gameMode === 'solo') {
         await runSoloAI();
     } else {
@@ -696,7 +682,6 @@ async function aiAction() {
     }
 }
 
-// --- STANDARD AI (SOLO MODE) ---
 async function runSoloAI() {
     if (aiHP > 15) {
         for(let i=0; i<3; i++) {
@@ -725,21 +710,15 @@ async function runSoloAI() {
             let fieldCount = aiField.filter(c => c !== null).length;
             if (fieldCount === 0 && card.val === 10) cost = 0;
         }
-
         let validSacrifices = aiField.map((c, i) => c !== null && c.type !== 'skl' ? i : -1).filter(i => i !== -1);
         
         if (validSacrifices.length >= cost) {
             validSacrifices.sort((a, b) => getCardValue(aiField[a]) - getCardValue(aiField[b]));
             let sacIndices = validSacrifices.slice(0, cost);
-
             for(let slot=0; slot<3; slot++) {
                 if (aiField[slot] === null || sacIndices.includes(slot)) {
-                    if (card.type === 'atk') {
-                        let opp = pField[slot];
-                        if (opp && opp.type === 'atk') continue; 
-                    }
-                    let move = { card: card, handIdx: hIdx, slot: slot, sacrifices: sacIndices, score: 0 };
-                    move.score = evaluateMove(move);
+                    if (card.type === 'atk' && pField[slot] && pField[slot].type === 'atk') continue; 
+                    let move = { card: card, handIdx: hIdx, slot: slot, sacrifices: sacIndices, score: evaluateMove({card: card, slot: slot}) };
                     possibleMoves.push(move);
                 }
             }
@@ -750,81 +729,34 @@ async function runSoloAI() {
     
     if (possibleMoves.length > 0 && possibleMoves[0].score > 50) {
         let best = possibleMoves[0];
+        isProcessing = true; 
+
         const handDiv = document.getElementById('ai-hand');
-        const cardElem = Array.from(handDiv.children).find(el => el.dataset.aiIndex == best.handIdx);
+        const cardElem = handDiv.children[best.handIdx];
         const slotElem = document.getElementById(`ai-${best.slot}`);
+        
         if (cardElem && slotElem) await flyCard(cardElem, slotElem);
 
         best.sacrifices.forEach(idx => aiField[idx] = null);
         let newCard = {...best.card, charging: (best.card.type === 'atk')};
         if(newCard.type === 'skl') newCard.revealed = false; 
+        
         aiField[best.slot] = newCard;
         aiHand.splice(best.handIdx, 1);
+        
+        addToLog(`AI summoned ${newCard.name}`, "ai");
+        isProcessing = false;
+        render();
         return;
     } 
     
     if (aiHand.length > 0) {
         aiHand.sort((a, b) => getDiscardPriority(b) - getDiscardPriority(a));
-        let discarded = aiHand.shift(); 
-        addToLog(`AI discarded ${discarded.name}`, "ai");
+        let discardedCard = aiHand.shift(); 
+        addToLog(`AI discarded ${discardedCard.name}`, "ai");
         let newCard = drawCard(aiDeck);
         if (newCard) aiHand.push(newCard);
-    } else {
-        addToLog("AI passes turn (Hand Empty)", "ai");
     }
-}
-
-// --- HELPER SCORING FUNCTIONS ---
-function evaluateMove(move) {
-    let score = 0;
-    let oppCard = pField[move.slot];
-    let card = move.card;
-
-    if (['reflect', 'supref', 'disarm', 'miss'].includes(card.effect)) {
-        if (oppCard && oppCard.type === 'atk' && !oppCard.charging) {
-            score += 1000; 
-            if (card.effect === 'supref') score += 200; 
-        } else { score -= 1000; }
-    }
-    else if (card.effect === 'breakd') {
-        if (oppCard && oppCard.type === 'def') score += 500; else score -= 1000; 
-    }
-    else if (card.type === 'def') {
-        score += 200; 
-        if (oppCard && oppCard.type === 'atk') {
-            score += 300; 
-            if (card.val > oppCard.val) { 
-                let thornDmg = card.val - oppCard.val; 
-                score += (thornDmg * 20); 
-            }
-        }
-    }
-    else if (card.type === 'atk') {
-        score += 500; 
-        if (oppCard && oppCard.type === 'atk') return -9999;
-        if (!oppCard) { 
-            score += 400; 
-        } else if (oppCard.type === 'def') {
-             if (card.val > oppCard.val) score += 100; else score -= 200; 
-        }
-    }
-    let sacValue = 0;
-    move.sacrifices.forEach(idx => { sacValue += getCardValue(aiField[idx]); });
-    if (score < 800) { score -= sacValue; }
-    return score;
-}
-
-function getDiscardPriority(card) {
-    if (card.effect === 'miss') return 80;
-    if (card.effect === 'breakd') return 70;
-    if (card.effect === 'reflect') return 60;
-    return 0;
-}
-function getCardValue(card) {
-    if (!card) return 0;
-    if (card.type === 'atk') return card.val;
-    if (card.type === 'def') return card.val;
-    return 0; 
 }
 
 // ==========================================
@@ -1070,7 +1002,7 @@ function testDevDeath(animClass) {
 }
 
 // ==========================================
-// SECTION 10: MULTIPLAYER NETWORKING
+// SECTION 10: MULTIPLAYER NETWORKING (REPAIRED)
 // ==========================================
 
 async function performMultiplayerHandshake() {
@@ -1091,8 +1023,8 @@ async function performMultiplayerHandshake() {
             
             addToLog("Opponent Connected!", "sys");
             render();
-            roomRef.child(oppRole).off(); // Stop Handshake listener
-            startMultiplayerListener();   // START GAMEPLAY LISTENER
+            roomRef.child(oppRole).off(); 
+            startMultiplayerListener();   
         }
     });
 }
@@ -1105,7 +1037,6 @@ function startMultiplayerListener() {
         const move = snapshot.val();
         if (!move) return;
 
-        // Check if new move
         const lastTime = window.lastMoveTime || 0;
         if (move.timestamp <= lastTime) return;
         window.lastMoveTime = move.timestamp;
@@ -1115,23 +1046,29 @@ function startMultiplayerListener() {
             const slot = move.data.slot;
             const sacs = move.data.sacrifices || [];
 
-            // Visual Sacrifice
-            sacs.forEach(sIdx => { aiField[sIdx] = null; });
+            isProcessing = true; // Lock UI during opponent move
 
-            // Visual Fly Card
+            // 1. Visual Sacrifice (Remove cards being used for cost)
+            sacs.forEach(sIdx => { aiField[sIdx] = null; });
+            render(); 
+
+            // 2. Visual Fly Card (Animate FROM opponent hand TO slot)
             const handDiv = document.getElementById('ai-hand');
             const cardElem = Array.from(handDiv.children).find(el => el.dataset.aiIndex == cardIdx);
             const slotElem = document.getElementById(`ai-${slot}`);
             
-            if (cardElem && slotElem) await flyCard(cardElem, slotElem);
+            if (cardElem && slotElem) {
+                await flyCard(cardElem, slotElem);
+            }
 
-            // Logic Update
+            // 3. Logic Update (Move data after animation finishes)
             let card = aiHand.splice(cardIdx, 1)[0];
-            card.charging = true; // NEW: Opponent played it, so it is charging
+            card.charging = true; 
             if(card.type === 'atk') card.charging = true; 
             if(card.type === 'skl') card.revealed = false; 
             
             aiField[slot] = card;
+            isProcessing = false;
             render();
         } 
         else if (move.type === 'discard') {
@@ -1148,53 +1085,44 @@ function startMultiplayerListener() {
             render();
         }
         else if (move.type === 'endTurn') {
-            // ============================
-            // TURN HANDOVER SEQUENCE
-            // ============================
             addToLog("Opponent ended turn.", "sys");
+            isProcessing = true;
             
             // 1. MY COUNTER-ATTACK!
-            // The opponent is ending their turn, so MY cards (pField) wake up and attack them.
             addToLog("--- My Counter-Attack ---", "sys");
-
-            // Wake up my cards
             pField.forEach(c => { if(c) c.charging = false; });
-
-            // Resolve Combat: Player (Me) attacks AI (Opponent)
+            
+            // Resolve Combat: My cards strike their charging cards
             await resolveCombat(pField, aiField, false);
             
-            // 2. Sync HP (Safety Check)
-            // If the opponent calculated they took 10 dmg, but I calculated 0, we have a problem.
-            // For now, let's trust our local calculation, but log the difference.
+            // 2. Sync HP (Trust opponent's HP for accuracy)
             if (move.data.resultingHp !== undefined) {
-                // Optional: You could force sync here: aiHP = move.data.resultingHp;
-                console.log(`HP Sync Check - My Calc: ${aiHP}, Their Calc: ${move.data.resultingHp}`);
+                aiHP = move.data.resultingHp;
             }
 
-            // 3. Start My Main Phase
+            // 3. Start My Turn
             isMyTurn = true;
             actions = 0; discarded = false; turnCount++;
             
-            // Draw Cards
+            // Animated Drawing Phase
             while(pHand.length < 3) {
                 if (pDeck.length === 0) { checkGameOver("DEFEAT! Decked Out."); return; }
                 await drawCardAnimated(pDeck, pHand, true);
             }
             while(aiHand.length < 3) {
-                 if (aiDeck.length === 0) { checkGameOver("VICTORY! AI Decked Out."); return; }
+                 if (aiDeck.length === 0) { checkGameOver("VICTORY! Opponent Decked Out."); return; }
                  await drawCardAnimated(aiDeck, aiHand, false);
             }
             
+            isProcessing = false;
             render();
             checkGameOver();
         }
     });
 }
 
-
 function sendMultiplayerMove(actionType, data) {
     if (gameMode !== 'multi') return;
-
     const moveData = {
         type: actionType,
         data: data,
@@ -1249,5 +1177,6 @@ function startMultiplayerGame() {
     document.getElementById('game-container').classList.remove('hidden');
     document.getElementById('top-bar').classList.remove('hidden');
     document.getElementById('btn-menu').style.display = 'block';
-    init(); 
+    init();
 }
+
