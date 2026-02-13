@@ -1028,18 +1028,20 @@ function testDevDeath(animClass) {
 }
 
 // ==========================================
-// SECTION 10: MULTIPLAYER NETWORKING (REPAIRED)
+// SECTION 10: MULTIPLAYER NETWORKING (FULL REWRITE)
 // ==========================================
 
 async function performMultiplayerHandshake() {
     roomRef = db.ref('rooms/' + currentRoomId);
     addToLog("Waiting for opponent...", "sys");
 
+    // 1. Upload initial data
     const myData = { hand: pHand, deck: pDeck, hp: pHP };
     await roomRef.child(myRole).update(myData);
 
     const oppRole = (myRole === 'host') ? 'guest' : 'host';
     
+    // 2. Listen for Opponent to finish their setup
     roomRef.child(oppRole).on('value', (snapshot) => {
         const oppData = snapshot.val();
         if (oppData && oppData.hand) {
@@ -1049,7 +1051,10 @@ async function performMultiplayerHandshake() {
             
             addToLog("Opponent Connected!", "sys");
             render();
+            
+            // Handshake complete, turn off this listener
             roomRef.child(oppRole).off(); 
+            // Start the main gameplay listener
             startMultiplayerListener();   
         }
     });
@@ -1059,64 +1064,85 @@ function startMultiplayerListener() {
     const oppRole = (myRole === 'host') ? 'guest' : 'host';
     const movePath = (oppRole === 'host') ? 'hostMove' : 'guestMove';
 
+    // LISTEN FOR OPPONENT ACTIONS
     roomRef.child(movePath).on('value', async (snapshot) => {
         const move = snapshot.val();
         if (!move) return;
 
+        // TIMESTAMP VALIDATION (Prevents replaying old moves)
         const lastTime = window.lastMoveTime || 0;
         if (move.timestamp <= lastTime) return;
         window.lastMoveTime = move.timestamp;
 
-                if (move.type === 'play') {
+        // --- ACTION: PLAY CARD ---
+        if (move.type === 'play') {
             const cardIdx = move.data.cardIndex;
             const slot = move.data.slot;
             const sacs = move.data.sacrifices || [];
 
-            isProcessing = true; // Lock UI during animation
+            isProcessing = true; // Lock UI
 
-            // 1. Clear sacrificed cards from opponent's field
+            // A. Remove sacrificed cards from opponent's field
             sacs.forEach(sIdx => { aiField[sIdx] = null; });
             render(); 
 
-            // 2. GHOST ANIMATION: Find the div in the opponent's hand
+            // B. GHOST ANIMATION (Fly from hand to board)
             const handDiv = document.getElementById('ai-hand');
-            // Try to get the specific card, or just any card if the index is weird
             const cardElem = handDiv.children[cardIdx] || handDiv.lastElementChild;
             const slotElem = document.getElementById(`ai-${slot}`);
             
             if (cardElem && slotElem) {
-                // Wait for the fly animation to finish
                 await flyCard(cardElem, slotElem);
             }
 
-            // 3. LOGIC UPDATE: Apply to array AFTER animation
-            let card = aiHand.splice(cardIdx, 1)[0] || { name: "Unknown", type: "atk", val: 10, img: "cardbacks/cardback.png" };
-            card.charging = true; 
-            if(card.type === 'skl') card.revealed = false; 
+            // C. UPDATE DATA (After animation)
+            let card = aiHand.splice(cardIdx, 1)[0];
+            if (card) {
+                card.charging = true; 
+                if(card.type === 'skl') card.revealed = false; 
+                aiField[slot] = card;
+            }
             
-            aiField[slot] = card;
             isProcessing = false;
             render();
         } 
+        // --- ACTION: DISCARD ---
+        else if (move.type === 'discard') {
+            const cardIdx = move.data.cardIndex;
+            let card = aiHand.splice(cardIdx, 1)[0];
+            if (card) addToLog(`Opponent discarded ${card.name}`, "ai");
+            render();
+        }
+        // --- ACTION: REMOVE SKILL ---
+        else if (move.type === 'removeSkill') {
+            const slot = move.data.slot;
+            aiField[slot] = null;
+            aiHP -= 5;
+            addToLog("Opponent paid 5 HP to remove skill", "ai");
+            render();
+        }
+        // --- ACTION: END TURN (The Handover) ---
+        else if (move.type === 'endTurn') {
+            addToLog("Opponent ended turn.", "sys");
+            isProcessing = true;
 
-            
-            // 1. MY COUNTER-ATTACK!
+            // 1. MY COUNTER-ATTACK (Ambush Phase)
             addToLog("--- My Counter-Attack ---", "sys");
             pField.forEach(c => { if(c) c.charging = false; });
-            
-            // Resolve Combat: My cards strike their charging cards
             await resolveCombat(pField, aiField, false);
             
-            // 2. Sync HP (Trust opponent's HP for accuracy)
+            // 2. SYNC HP
             if (move.data.resultingHp !== undefined) {
                 aiHP = move.data.resultingHp;
             }
 
-            // 3. Start My Turn
+            // 3. START MY PHASE
             isMyTurn = true;
-            actions = 0; discarded = false; turnCount++;
+            actions = 0; 
+            discarded = false; 
+            turnCount++;
             
-            // Animated Drawing Phase
+            // 4. ANIMATED DRAW
             while(pHand.length < 3) {
                 if (pDeck.length === 0) { checkGameOver("DEFEAT! Decked Out."); return; }
                 await drawCardAnimated(pDeck, pHand, true);
@@ -1134,7 +1160,7 @@ function startMultiplayerListener() {
 }
 
 function sendMultiplayerMove(actionType, data) {
-    if (gameMode !== 'multi') return;
+    if (gameMode !== 'multi' || !roomRef) return;
     const moveData = {
         type: actionType,
         data: data,
@@ -1161,6 +1187,8 @@ function createRoom() {
                 setTimeout(() => startMultiplayerGame(), 1000);
             }
         });
+    }).catch(err => {
+        alert("Firebase Error: " + err.message);
     });
 }
 
@@ -1178,6 +1206,7 @@ function joinRoom() {
             setTimeout(() => startMultiplayerGame(), 1000);
         } else {
             alert("Room not found!");
+            document.getElementById('lobby-status').innerText = "";
         }
     });
 }
