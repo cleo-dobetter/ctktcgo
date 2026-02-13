@@ -25,45 +25,6 @@ body {
    SECTION 2: START SCREEN
    TROUBLESHOOTING: If the start menu background or buttons are misaligned.
    ========================================== */
-
-/* LOADING SCREEN */
-#loading-screen {
-    position: fixed;
-    top: 0; left: 0;
-    width: 100%; height: 100%;
-    background: #111;
-    z-index: 9999;
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    color: white;
-    font-family: 'Courier New', monospace;
-}
-.loader-content {
-    text-align: center;
-    width: 80%;
-    max-width: 400px;
-}
-.loading-bar-container {
-    width: 100%;
-    height: 20px;
-    background: #333;
-    border: 2px solid #555;
-    margin: 20px 0;
-    border-radius: 10px;
-    overflow: hidden;
-}
-.loading-bar {
-    width: 0%;
-    height: 100%;
-    background: linear-gradient(90deg, #ff9900, #ffcc00);
-    transition: width 0.2s;
-}
-.hidden {
-    display: none !important;
-}
-
-
 #start-screen {
     position: fixed; top: 0; left: 0;
     width: 100%; height: 100%; z-index: 5000;
@@ -296,40 +257,12 @@ button:disabled { opacity: 0.3; cursor: default; }
    SECTION 6: CARDS & ANIMATIONS
    TROUBLESHOOTING: If animations (flying cards, flashes) are broken.
    ========================================== */
-
-.card {
-    /* Existing styles... */
-    border: none !important;      /* Force remove borders */
-    outline: none !important;     /* Force remove outlines */
-    box-shadow: none;             /* Remove default shadows */
-    background-color: transparent; /* Fix white background flash */
-	width: var(--card-w); height: var(--card-h); 
+.card { 
+    width: var(--card-w); height: var(--card-h); 
     background-size: 100% 100%; background-repeat: no-repeat; background-position: center; 
     border-radius: 8px; cursor: pointer; transition: transform 0.2s;
     filter: drop-shadow(0 4px 6px rgba(0,0,0,0.6));
-    
-    /* Ensure image fills the div perfectly */
-    background-size: 100% 100%;
-    background-position: center;
-    background-repeat: no-repeat;
-    
-    /* Make sure clicks work */
-    cursor: pointer;
 }
-
-/* Fix the Slot container too */
-.slot {
-    border: 1px solid rgba(255, 255, 255, 0.1); /* Subtle guide only */
-    background: rgba(0, 0, 0, 0.2);
-    overflow: hidden; /* Clips any weird overflowing content */
-}
-
-/* When highlighted, use a glow instead of a border to look cleaner */
-.slot.highlight {
-    border: 1px solid #ffd700;
-    box-shadow: 0 0 10px #ffd700;
-}
-
 .card.selected { transform: translateY(-15px) scale(1.1); filter: drop-shadow(0 0 8px var(--accent)); z-index: 10; }
 .card.skill-dark { filter: brightness(0.5); }
 

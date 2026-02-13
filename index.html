@@ -8,29 +8,23 @@
 </head>
 <body>
 
-<div id="loading-screen">
-    <div id="loading-container">
-        <div id="loading-bar" style="width: 0%; height: 100%; background: gold; transition: width 0.2s;"></div>
-    </div>
-    <p id="loading-text" style="color: white; text-align: center;">Loading Assets...</p>
-</div>
-
-
     <div id="start-screen">
         <div class="start-buttons">
             <button class="btn-start" onclick="startGame()">MATCH</button>
             <button class="btn-start" onclick="openSkills()">SKILLS</button>
             <button class="btn-start" onclick="openRules()">RULES</button>
 
-            <div id="multiplayer-menu" class="menu-section">
-                <h3>MULTIPLAYER</h3>
-                <input type="text" id="room-code" placeholder="Enter Room Code (e.g. 1234)" maxlength="4">
-                <div class="multi-buttons">
-                    <button onclick="createRoom()">Create Room</button>
-                    <button onclick="joinRoom()">Join Room</button>
-                </div>
-                <p id="lobby-status" class="status-text"></p>
-            </div>
+<div id="multiplayer-menu" class="menu-section">
+    <h3>MULTIPLAYER</h3>
+    <input type="text" id="room-code" placeholder="Enter Room Code (e.g. 1234)" maxlength="4">
+    <div class="multi-buttons">
+        <button onclick="createRoom()">Create Room</button>
+        <button onclick="joinRoom()">Join Room</button>
+    </div>
+    <p id="lobby-status" class="status-text"></p>
+</div>
+
+            
         </div>
     </div>
 
@@ -267,10 +261,13 @@
         </div>
     </div>
 
-    <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-database-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-auth-compat.js"></script>
 
-<script src="script.js"></script> 
- </body>
+<script src="script.js"></script>
+<script src="tutorial.js"></script>
+</body>
+
+</body>
 </html>
