@@ -1,8 +1,9 @@
-// ==========================================
-// js/globals.js - The Single Source of Truth
-// ==========================================
-window.IMAGES = "images/"; // Attached to window for absolute certainty
+// js/globals.js
 
+// 1. PATHING: This is relative to your index.html
+window.IMAGES = "images/"; 
+
+// 2. DATA: The cards to load
 window.BASE_DECK = [
     { name: "Blazing Colt", type: "atk", val: 10, cost: 1, img: "horse/blazing_colt.png", count: 3 },
     { name: "Blazing Pegasus", type: "atk", val: 15, cost: 2, img: "horse/blazing_pegasus.png", count: 2 },
@@ -19,12 +20,8 @@ window.SKILL_POOL = [
     { id: "disarm", name: "Stealthy Shinobi", costPoints: 3, limit: 3, img: "ninja/stealthy_shinobi.png", effect: "disarm" }
 ];
 
-// Shared States
+// 3. STATE: Shared game variables
 window.gameMode = 'solo';
 window.pHP = 60; window.aiHP = 60;
 window.pHand = []; window.aiHand = [];
 window.pField = [null, null, null]; window.aiField = [null, null, null];
-window.pDeck = []; window.aiDeck = [];
-window.isProcessing = false; window.isMyTurn = true;
-window.selectedIdx = null; window.sacrifices = []; window.actions = 0; window.discarded = false;
-window.playerSkills = { miss: 2, reflect: 2, breakd: 2, disarm: 1 };

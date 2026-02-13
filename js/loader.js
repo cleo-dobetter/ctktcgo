@@ -1,56 +1,86 @@
-// ==========================================
-// js/loader.js - The Preloader
-// ==========================================
+// js/loader.js
 
 window.startPreloader = function() {
+    console.log("Loader started...");
+
+    const screen = document.getElementById('loading-screen');
     const bar = document.getElementById('loading-bar');
     const txt = document.getElementById('loading-text');
 
-    // 1. Build List (Safely check for globals)
-    const PRELOAD_LIST = ["cardbacks/cardback.png", "animations/cardani/stallion.gif"];
-    
-    if (typeof BASE_DECK !== 'undefined') {
-        BASE_DECK.forEach(c => { if(c.img) PRELOAD_LIST.push(c.img); });
+    // 1. SAFETY: If the HTML is missing, just unlock the game immediately
+    if (!screen) {
+        console.warn("No loading screen found in HTML.");
+        return; 
     }
-    if (typeof SKILL_POOL !== 'undefined') {
-        SKILL_POOL.forEach(s => { if(s.img) PRELOAD_LIST.push(s.img); });
+
+    // 2. COLLECT ASSETS
+    const assets = ["cardbacks/cardback.png", "animations/cardani/stallion.gif"];
+    
+    // Add deck images safely
+    if (window.BASE_DECK) {
+        window.BASE_DECK.forEach(c => assets.push(c.img));
+    }
+    if (window.SKILL_POOL) {
+        window.SKILL_POOL.forEach(s => assets.push(s.img));
     }
 
     let loaded = 0;
-    let total = PRELOAD_LIST.length;
+    let total = assets.length;
 
+    // 3. LOAD LOOP
     if (total === 0) {
         finishLoading();
         return;
     }
 
-    // 2. Loading Loop
-    PRELOAD_LIST.forEach(file => {
+    assets.forEach(path => {
         const img = new Image();
-        img.onload = img.onerror = () => {
+        
+        // Success Handler
+        img.onload = () => {
             loaded++;
-            let percent = Math.floor((loaded / total) * 100);
-            if (bar) bar.style.width = percent + "%";
-            if (txt) txt.innerText = `Loading Assets... ${percent}%`;
-            if (loaded >= total) setTimeout(finishLoading, 500);
+            updateBar(loaded, total, bar, txt);
         };
-        // Use IMAGES from globals.js
-        img.src = (typeof IMAGES !== 'undefined' ? IMAGES : "images/") + file;
+
+        // Error Handler (Logs missing files but keeps loading)
+        img.onerror = () => {
+            console.error("Missing image:", window.IMAGES + path);
+            loaded++;
+            updateBar(loaded, total, bar, txt);
+        };
+
+        // Trigger Load
+        img.src = window.IMAGES + path;
     });
 
-    // 3. Fail-safe timeout
+    // 4. TIMEOUT FALLBACK (In case a download hangs)
     setTimeout(() => {
-        if (loaded < total) finishLoading();
-    }, 5000);
+        if (screen && !screen.classList.contains('hidden')) {
+            console.log("Forcing load completion...");
+            finishLoading();
+        }
+    }, 4000);
 };
+
+function updateBar(loaded, total, bar, txt) {
+    const percent = Math.floor((loaded / total) * 100);
+    if (bar) bar.style.width = percent + "%";
+    if (txt) txt.innerText = `Loading... ${percent}%`;
+
+    if (loaded >= total) {
+        setTimeout(finishLoading, 500);
+    }
+}
 
 function finishLoading() {
     const screen = document.getElementById('loading-screen');
     if (screen) {
         screen.style.opacity = '0';
-        setTimeout(() => screen.classList.add('hidden'), 1000);
+        setTimeout(() => {
+            screen.style.display = 'none'; // Completely remove it
+        }, 500);
     }
 }
 
-// Start when window loads
-window.addEventListener('load', startPreloader);
+// Start immediately when the window is ready
+window.addEventListener('load', window.startPreloader);
